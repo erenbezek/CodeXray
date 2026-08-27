@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-**M4 — SQL Injection Taint MVP **
+**M5 — XSS MVP **
 
 ## Working
 
@@ -22,12 +22,13 @@
 - Taint path generation
 - CWE / severity metadata
 - SQL Injection rule
+- Reflected/server-side XSS rule (Python + Flask)
 - Vulnerable / safe examples
 - Automated tests
 
 ## Test Status
 
-15 passed
+30 passed
 
 ## Current SQL Injection Flow
 
@@ -92,6 +93,7 @@ Contains vulnerability-specific rules.
 Currently implemented:
 
 - SQL Injection
+- XSS (reflected/server-side)
 
 ### `tests/`
 
@@ -103,6 +105,7 @@ Contains automated tests for:
 - Sanitizer behavior
 - Sink detection
 - SQL Injection behavior
+- XSS behavior
 
 ### `examples/`
 
@@ -111,7 +114,6 @@ Contains vulnerable and safe example Python code.
 ## Not Implemented Yet
 
 - CLI scanner
-- XSS
 - Path Manipulation
 - Sensitive Data Exposure
 - AST structural rules
@@ -159,9 +161,9 @@ Branches and multiple execution paths are not fully modeled.
 
 Taint is currently tracked within a function and is not propagated across function boundaries.
 
-## Next Milestone
+## M5 Milestone Completion
 
-**M5 — XSS**
+**XSS (reflected/server-side)**
 
 ### Goal
 
@@ -178,7 +180,7 @@ Add the first additional taint-based vulnerability rule without introducing SQL-
 
 ## Current Project Status
 
-CodeXray currently has a working intra-procedural taint-analysis core with a functioning SQL Injection rule.
+CodeXray currently has a working intra-procedural taint-analysis core with functioning SQL Injection and reflected/server-side XSS rules.
 
 It is not yet a complete SAST tool.
 
