@@ -14,9 +14,9 @@ etmeyi hedefler.
 
 ## Durum
 
-M4 tamamlandı: paketleme/test altyapısı düzeltildi, birim test kapsamı genişletildi, sanitizer
-eşleşme semantiği pattern seviyesine indirgendi. Sıradaki adım: XSS
-kuralı (bkz. `docs/roadmap.md`).
+M5 tamamlandı: paketleme/test altyapısı düzeltildi, birim test kapsamı genişletildi,
+sanitizer eşleşme semantiği pattern seviyesine indirgendi ve Python + Flask için
+reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
 
 ## Şu an ne çalışıyor
 
@@ -25,6 +25,8 @@ kuralı (bkz. `docs/roadmap.md`).
   bulgu. `escape_sql` gibi bir sanitizer'dan geçen değerler için alarm
   üretilmiyor; geçmeyenler için tam veri akışı izi (`request.args →
   username → query → cursor.execute`) ile raporlanıyor.
+- **XSS (CWE-79)** için reflected/server-side taint tracking: Flask request
+  input'ları → HTML text sanitizer → `Response`, `make_response` veya `Markup`.
 
 ## Neden bu proje
 

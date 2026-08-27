@@ -11,9 +11,9 @@ M3  TaintState + traversal              <-- TAMAMLANDI (calisiyor, test edildi)
      |
 M4  SQL Injection saglamlastirma        <-- TAMAMLANDI (packaging fix, sink semantigi, birim testler)
      |
-M5  XSS (ayni motor uzerinde)           <-- next
+M5  XSS (ayni motor uzerinde)           <-- TAMAMLANDI
      |
-M6  Path Manipulation
+M6  Path Manipulation                    <-- next
      |
 M7  Sensitive Data Exposure
      |
