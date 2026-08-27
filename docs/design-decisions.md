@@ -4,259 +4,230 @@ Kronolojik karar günlüğü — "neden böyle" sorusuna cevap vermek için.
 
 ## Proje kapsamı: mini SAST + taint tracking
 
-Sadece terim ezberlemek değil, terimleri tespit eden bir sistem
-kurulması hedeflendi. Kapsam bilerek geniş değil (15 kategorinin
-hepsi değil) — kalite, kapsamdan önceliklendirildi.
+Sadece terim ezberlemek değil, terimleri tespit eden bir sistem kurulması hedeflendi. Kapsam bilerek geniş değil (15 kategorinin hepsi değil) — kalite, kapsamdan önceliklendirildi.
 
 ## LLM katmanı: triage, tespit motoru değil
 
-Kendi ML modelini sıfırdan eğitmek reddedildi — yeterli etiketli veri# Tasarım Kararları
+Kendi ML modelini sıfırdan eğitmek reddedildi — yeterli etiketli veri seti toplamak süre kısıtında gerçekçi değil ve sonucu muhtemelen taint tracking'ten daha zayıf olurdu.
 
-Kronolojik karar günlüğü — "neden böyle" sorusuna cevap vermek için.
-
-## Proje kapsamı: mini SAST + taint tracking
-
-Sadece terim ezberlemek değil, terimleri tespit eden bir sistem
-kurulması hedeflendi. Kapsam bilerek geniş değil (15 kategorinin
-hepsi değil) — kalite, kapsamdan önceliklendirildi.
-
-## LLM katmanı: triage, tespit motoru değil
-
-Kendi ML modelini sıfırdan eğitmek reddedildi — yeterli etiketli veri
-seti toplamak süre kısıtında gerçekçi değil ve sonucu muhtemelen
-taint tracking'ten daha zayıf olurdu. Bunun yerine: kural motorunun
-bulduğu sonuçları ikinci kez değerlendiren, yanlış pozitifleri azaltan
-ve insan diline çeviren bir LLM triage katmanı (bonus, tespit motoru
-değil) tercih edildi.
+Bunun yerine kural motorunun bulduğu sonuçları ikinci kez değerlendiren, yanlış pozitifleri azaltan ve insan diline çeviren bir LLM triage katmanı (bonus, tespit motoru değil) tercih edildi.
 
 ## Dil: Node.js → Python
 
-İlk tasarım Node.js/Babel üzerineydi. Python'a geçildi çünkü: (1) en
-akıcı olunan dil Python, Node'da akıcılık yok; (2) Python'un `ast`
-modülü standart kütüphanede yerleşik, harici parser gerekmiyor; (3)
-gerçek dünya emsali güçlü — Bandit, PyT. Önceden tasarlanan
-`TaintState`/source-sanitizer-sink modeli dilden bağımsız olduğu için
-geçişte kayıp olmadı.
+İlk tasarım Node.js/Babel üzerineydi. Python'a geçildi çünkü:
+
+1. En akıcı olunan dil Python; Node.js tarafında aynı akıcılık yok.
+2. Python'un `ast` modülü standart kütüphanede yerleşik, harici parser gerekmiyor.
+3. Gerçek dünya emsali güçlü: Bandit ve PyT.
+
+Önceden tasarlanan `TaintState` / source-sanitizer-sink modeli dilden bağımsız olduğu için geçişte kayıp olmadı.
 
 ## MVP kapsamı: intra-procedural
 
-Fonksiyonlar arası taint propagation (call graph, parametre/return
-takibi, recursive call'lar, aliasing) MVP'ye dahil edilmedi — bunu
-eklemek taint motoru geliştirmekten çok mini bir program analiz
-framework'ü geliştirmeye dönüşürdü. v0.2'ye bırakıldı, MVP'de bilinen
-ve dokümante edilen bir bilgi kaybı olarak kabul edildi.
+Fonksiyonlar arası taint propagation (call graph, parametre/return takibi, recursive call'lar, aliasing) MVP'ye dahil edilmedi.
+
+Bunu eklemek taint motoru geliştirmekten çok daha geniş bir program analiz framework'ü geliştirmeye dönüşebilirdi.
+
+Bu nedenle inter-procedural analysis v0.2 / stretch goal olarak bırakıldı ve MVP'de bilinen ve dokümante edilen bir bilgi kaybı olarak kabul edildi.
 
 ## TaintState modeli: sadece bool değil, zengin state
 
-`Set<string>` (kirli değişkenler kümesi) yerine zenginleştirilmiş bir
-`TaintState` (source, path, kind, sanitized_for alanlarıyla) tercih
-edildi — bu sayede bulgu raporunda tam veri akışı izi gösterilebiliyor
-(`request.args → username → query → cursor.execute`), sadece "tehlikeli"
-denmiyor.
+`Set<string>` (kirli değişkenler kümesi) yerine zenginleştirilmiş bir `TaintState` modeli tercih edildi.
 
-`TaintState` immutable (`frozen=True`) — `b = a` sonrası `b` üzerinde
-yapılan bir değişikliğin `a`'yı etkilememesi için.
+Model temel olarak `source`, `path`, `kind` ve `sanitized_for` bilgilerini taşıyor.
+
+Böylece bulgu raporunda yalnızca "tehlikeli" demek yerine tam veri akışı izi gösterilebiliyor:
+
+```text
+request.args → username → query → cursor.execute
+```
+
+`TaintState` immutable (`frozen=True`) tutuluyor. Böylece `b = a` sonrasında `b` üzerinde yapılan değişiklik `a`'nın state'ini etkilemiyor.
 
 ## `sanitized ≠ clean`
 
-Bir SQL sanitizer'ından geçen değer otomatik olarak HTML için de güvenli
-sayılmamalı. Bu yüzden `sanitized_for` tek bir boolean değil, bir küme
-(`tuple[str, ...]`) — hangi bağlamlar için güvenli olduğu ayrı ayrı
-tutuluyor.
+Bir SQL sanitizer'ından geçen değer otomatik olarak HTML için de güvenli sayılmamalı.
 
-`merge_states()`'te (BinOp/JoinedStr birleştirme) `sanitized_for` için
-**kesişim** alınıyor, union değil — bir ifadenin bir parçası sql için
-temiz, diğer parçası değilse, sonucu yanlışlıkla güvenli saymamak için.
+Bu nedenle `sanitized_for` tek bir boolean yerine hangi güvenlik bağlamları için sanitization uygulandığını taşıyan bir alan olarak tasarlandı.
+
+`merge_states()` içinde (`BinOp` / `JoinedStr`) `sanitized_for` için union değil **kesişim** alınıyor.
+
+Bir ifadenin bir parçası belirli bir bağlam için güvenli, diğer parçası güvenli değilse birleşik değer yanlışlıkla güvenli sayılmamalı.
 
 ## Eşleştirme: qualified-name, regex değil
 
-`sources`/`sanitizers`/`sinks` listelerini regex string'leri haline
-getirmek bilinçli olarak reddedildi — bu, taint motorunu giderek bir
-"regex eşleştirme motoru"na dönüştürür ve projenin asıl değerini
-(veri akışını gerçekten anlamak) sulandırır. Bunun yerine
-`resolve_qualified_name()` AST üzerinde `Attribute`/`Name`/`Call`/
-`Subscript` zincirini gezip `"cursor.execute"` gibi bir string'e
-çeviriyor, kural bu string'le karşılaştırılıyor.
+`sources` / `sanitizers` / `sinks` listelerini regex string'leri haline getirmek bilinçli olarak reddedildi.
 
-Kabul edilen sınır: bu tam type inference değil — farklı bir sınıfın
-aynı isimli metodu (`execute`) yanlışlıkla eşleşebilir. `module` alanı
-ileride bu ayrımı güçlendirmek için şemada zaten duruyor.
+Böyle bir yaklaşım taint motorunu giderek bir "regex eşleştirme motoru"na dönüştürür ve projenin asıl değerini, yani veri akışını gerçekten anlamasını, sulandırır.
+
+Bunun yerine `resolve_qualified_name()` AST üzerinde `Attribute` / `Name` / `Call` / `Subscript` zincirini gezip `"cursor.execute"` gibi bir string'e çeviriyor ve kural bu string ile eşleştiriliyor.
+
+Kabul edilen sınır: Bu tam type inference değildir. Farklı bir sınıfın aynı isimli metodu yanlışlıkla eşleşebilir.
+
+`module` alanı bu ayrımı ileride güçlendirmek için şemada bulunmaktadır; MVP'de eşleştirmede belirleyici değildir.
 
 ## Kural / traversal ayrımı
 
 `RuleEngine` ile traversal (`taint_engine.py`) kesin olarak ayrıldı.
-Traversal hiçbir zaman "if function_name == 'execute'" gibi kurala özgü
-kod içermeyecek — sadece `RuleEngine.classify(node)`'a soruyor. Yeni
-kategori eklemek `rules/` altına yeni bir dosya eklemek demek.
-`RuleMatch` (rule + role + pattern) döndürülüyor, çıplak tuple değil —
-çünkü sink/sanitizer tarafında pattern'in kendi alanlarına (
-`dangerous_arguments`, `sanitizes_for`) tekrar erişim gerekiyor.
+
+Traversal kurala özgü ifadeler taşımamalı; örneğin `if function_name == "execute"` gibi SQL'e özel kontroller bulunmamalı.
+
+Traversal yalnızca `RuleEngine.classify(node)` gibi mekanizmalar üzerinden güvenlik anlamını sorgular.
+
+Yeni kategori eklemek mümkün olduğunca `rules/` altına yeni bir Rule eklemek anlamına gelmelidir.
+
+`RuleMatch` (`rule + role + pattern`) kullanılır. Çıplak tuple kullanılmamasının nedeni sink ve sanitizer tarafında pattern'e ait `dangerous_arguments`, `sanitizes_for` ve benzeri alanlara doğrudan erişilebilmesidir.
 
 ## Python'a özgü not: f-string'ler ayrı ele alınmalı
 
-JS'de string concatenation (`+`) taint propagation'ın ana kaynağıyken,
-Python'da SQL injection'ın en yaygın kaynağı f-string'ler
-(`f"...{username}..."`). AST'de bunlar `BinOp` değil, ayrı bir düğüm
-tipi olan `JoinedStr`. Motor her ikisini de (`_analyze_BinOp` ve
-`_analyze_JoinedStr`) ayrı ayrı destekliyor.
+Python f-string'leri (`f"...{username}..."`) AST'de `BinOp` değil, `JoinedStr` olarak temsil edilir.
+
+Bu nedenle taint propagation için `BinOp` ve `JoinedStr` ayrı ayrı analiz edilir.
 
 ## M3 sonrası repo review'da bulunan ve düzeltilen sorunlar
 
-**Test altyapısı: temiz checkout'ta `pytest` başarısız oluyordu.**
-`src/` layout kullanılıyor ama pytest bunu otomatik path'e eklemiyordu;
-`tests/conftest.py`'deki manuel `sys.path` hack'i de sadece repo kökünü
-(`rules/` için) ekliyordu, `src/`'i değil. Bağımsız olarak reprodüklendi
-(`pip install` yapılmadan `ModuleNotFoundError: No module named
-'codexray'`). Çözüm: `pyproject.toml`'a
-`[tool.pytest.ini_options] pythonpath = ["src", "."]` eklendi,
-`conftest.py` kaldırıldı — artık `git clone && pytest` kurulum
-gerektirmeden çalışıyor.
+### Test altyapısı
 
-**Sink sanitizer eşleşmesi: rule-wide union yerine pattern-level.**
-`_check_sinks()` önceden bir rule'daki TÜM sanitizer'ların
-`sanitizes_for` birleşimini zorunlu kılıyordu (`sql` VE `html` gibi).
-Bir rule'da birden fazla, farklı bağlamlar için sanitizer olduğunda bu
-yanlış bir soyutlamaydı. Çözüm: `SinkPattern`'e
-`requires_sanitization_for` alanı eklendi — her sink kendi kabul ettiği
-kategorileri açıkça tanımlıyor, rule'un diğer sanitizer'larından
-etkilenmiyor.
+Temiz checkout'ta `pytest` collection sırasında `codexray` bulunamıyordu.
 
-**Test kapsamı genişletildi.** Önceki tek entegrasyon testine
-(vulnerable/safe örnek dosyaları üzerinden) ek olarak birim seviyesinde
-`test_rule_model.py` (RuleEngine.classify) ve `test_taint_engine.py`
-(source, çok-adımlı propagation, BinOp, JoinedStr, sanitizer'ın
-`sanitized_for` içeriğini doğrulayan test, sink, temiz/bilinmeyen
-değer) eklendi.
+Sebep `src/` layout ile test ortamının import path'inin uyuşmamasıydı. `tests/conftest.py` içindeki manuel path yaklaşımı da yeterli değildi.
 
-## Açık tasarım borcu (bilinçli olarak ertelendi)
+Çözüm olarak `pyproject.toml` içine:
 
-- **Multi-source provenance yok** — `merge_states()` birden fazla
-  tainted parçayı birleştirirken source/kind bilgisini ilk parçadan
-  alıyor, ikinci bir source varsa kaybediyor.
-- **`analyze_expression` fallback'i CLEAN, UNKNOWN değil** —
-  desteklenmeyen bir AST düğümü "bilmiyorum" yerine "temiz" sayılıyor,
-  false negative riski var.
-- **Control flow modellenmiyor** — `if`/`try`/`except` dallanmaları
-  taint durumunu etkilemiyor, motor sıralı kod varsayıyor.
+```toml
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+```
 
-Üçü de MVP kapsamını bilinçli olarak küçük tutmak için şimdilik
-ertelendi (bkz. `AGENTS.md`).
+eklendi ve gereksiz `conftest.py` path hack'i kaldırıldı.
 
-seti toplamak süre kısıtında gerçekçi değil ve sonucu muhtemelen
-taint tracking'ten daha zayıf olurdu. Bunun yerine: kural motorunun
-bulduğu sonuçları ikinci kez değerlendiren, yanlış pozitifleri azaltan
-ve insan diline çeviren bir LLM triage katmanı (bonus, tespit motoru
-değil) tercih edildi.
+Ardından:
 
-## Dil: Node.js → Python
+```text
+pytest
+15 passed
+```
 
-İlk tasarım Node.js/Babel üzerineydi. Python'a geçildi çünkü: (1) en
-akıcı olunan dil Python, Node'da akıcılık yok; (2) Python'un `ast`
-modülü standart kütüphanede yerleşik, harici parser gerekmiyor; (3)
-gerçek dünya emsali güçlü — Bandit, PyT. Önceden tasarlanan
-`TaintState`/source-sanitizer-sink modeli dilden bağımsız olduğu için
-geçişte kayıp olmadı.
+durumu doğrulandı.
 
-## MVP kapsamı: intra-procedural
+### Sink sanitizer eşleşmesi
 
-Fonksiyonlar arası taint propagation (call graph, parametre/return
-takibi, recursive call'lar, aliasing) MVP'ye dahil edilmedi — bunu
-eklemek taint motoru geliştirmekten çok mini bir program analiz
-framework'ü geliştirmeye dönüşürdü. v0.2'ye bırakıldı, MVP'de bilinen
-ve dokümante edilen bir bilgi kaybı olarak kabul edildi.
+Önceki yaklaşım bir Rule içindeki tüm sanitizer kategorilerini rule-wide union mantığıyla ele alıyordu.
 
-## TaintState modeli: sadece bool değil, zengin state
+Bu, aynı Rule içinde farklı bağlamlara ait sanitizer'lar olduğunda yanlış bir soyutlamaydı.
 
-`Set<string>` (kirli değişkenler kümesi) yerine zenginleştirilmiş bir
-`TaintState` (source, path, kind, sanitized_for alanlarıyla) tercih
-edildi — bu sayede bulgu raporunda tam veri akışı izi gösterilebiliyor
-(`request.args → username → query → cursor.execute`), sadece "tehlikeli"
-denmiyor.
+Çözüm olarak `SinkPattern` içine:
 
-`TaintState` immutable (`frozen=True`) — `b = a` sonrası `b` üzerinde
-yapılan bir değişikliğin `a`'yı etkilememesi için.
+```text
+requires_sanitization_for
+```
 
-## `sanitized ≠ clean`
+alanı eklendi.
 
-Bir SQL sanitizer'ından geçen değer otomatik olarak HTML için de güvenli
-sayılmamalı. Bu yüzden `sanitized_for` tek bir boolean değil, bir küme
-(`tuple[str, ...]`) — hangi bağlamlar için güvenli olduğu ayrı ayrı
-tutuluyor.
+Böylece her sink kendi gerekli sanitization bağlamını açıkça tanımlayabiliyor.
 
-`merge_states()`'te (BinOp/JoinedStr birleştirme) `sanitized_for` için
-**kesişim** alınıyor, union değil — bir ifadenin bir parçası sql için
-temiz, diğer parçası değilse, sonucu yanlışlıkla güvenli saymamak için.
+### Test kapsamı
 
-## Eşleştirme: qualified-name, regex değil
+Önceki tek entegrasyon testine ek olarak birim seviyesinde testler eklendi.
 
-`sources`/`sanitizers`/`sinks` listelerini regex string'leri haline
-getirmek bilinçli olarak reddedildi — bu, taint motorunu giderek bir
-"regex eşleştirme motoru"na dönüştürür ve projenin asıl değerini
-(veri akışını gerçekten anlamak) sulandırır. Bunun yerine
-`resolve_qualified_name()` AST üzerinde `Attribute`/`Name`/`Call`/
-`Subscript` zincirini gezip `"cursor.execute"` gibi bir string'e
-çeviriyor, kural bu string'le karşılaştırılıyor.
+Kapsam:
 
-Kabul edilen sınır: bu tam type inference değil — farklı bir sınıfın
-aynı isimli metodu (`execute`) yanlışlıkla eşleşebilir. `module` alanı
-ileride bu ayrımı güçlendirmek için şemada zaten duruyor.
+- RuleEngine classification
+- Source detection
+- Çok adımlı taint propagation
+- `BinOp`
+- `JoinedStr`
+- Sanitizer davranışı
+- `sanitized_for`
+- Sink detection
+- Tainted / clean / unknown değerler için temel davranış
 
-## Kural / traversal ayrımı
+Toplam mevcut test sonucu:
 
-`RuleEngine` ile traversal (`taint_engine.py`) kesin olarak ayrıldı.
-Traversal hiçbir zaman "if function_name == 'execute'" gibi kurala özgü
-kod içermeyecek — sadece `RuleEngine.classify(node)`'a soruyor. Yeni
-kategori eklemek `rules/` altına yeni bir dosya eklemek demek.
-`RuleMatch` (rule + role + pattern) döndürülüyor, çıplak tuple değil —
-çünkü sink/sanitizer tarafında pattern'in kendi alanlarına (
-`dangerous_arguments`, `sanitizes_for`) tekrar erişim gerekiyor.
+```text
+15 passed
+```
 
-## Python'a özgü not: f-string'ler ayrı ele alınmalı
+## M5 XSS kapsam kararı
 
-JS'de string concatenation (`+`) taint propagation'ın ana kaynağıyken,
-Python'da SQL injection'ın en yaygın kaynağı f-string'ler
-(`f"...{username}..."`). AST'de bunlar `BinOp` değil, ayrı bir düğüm
-tipi olan `JoinedStr`. Motor her ikisini de (`_analyze_BinOp` ve
-`_analyze_JoinedStr`) ayrı ayrı destekliyor.
+M5'in ilk XSS kapsamı **reflected / server-side XSS** ile sınırlandırıldı.
 
-## M3 sonrası repo review'da bulunan ve düzeltilen sorunlar
+Amaç, mevcut taint motorunun SQL Injection dışındaki ikinci gerçek taint kuralını çekirdek motoru değiştirmeden destekleyebildiğini göstermek.
 
-**Test altyapısı: temiz checkout'ta `pytest` başarısız oluyordu.**
-`src/` layout kullanılıyor ama pytest bunu otomatik path'e eklemiyordu;
-`tests/conftest.py`'deki manuel `sys.path` hack'i de sadece repo kökünü
-(`rules/` için) ekliyordu, `src/`'i değil. Bağımsız olarak reprodüklendi
-(`pip install` yapılmadan `ModuleNotFoundError: No module named
-'codexray'`). Çözüm: `pyproject.toml`'a
-`[tool.pytest.ini_options] pythonpath = ["src", "."]` eklendi,
-`conftest.py` kaldırıldı — artık `git clone && pytest` kurulum
-gerektirmeden çalışıyor.
+### M5 Source kapsamı
 
-**Sink sanitizer eşleşmesi: rule-wide union yerine pattern-level.**
-`_check_sinks()` önceden bir rule'daki TÜM sanitizer'ların
-`sanitizes_for` birleşimini zorunlu kılıyordu (`sql` VE `html` gibi).
-Bir rule'da birden fazla, farklı bağlamlar için sanitizer olduğunda bu
-yanlış bir soyutlamaydı. Çözüm: `SinkPattern`'e
-`requires_sanitization_for` alanı eklendi — her sink kendi kabul ettiği
-kategorileri açıkça tanımlıyor, rule'un diğer sanitizer'larından
-etkilenmiyor.
+İlk sürümde Flask request yüzeyinin temel kullanıcı kontrollü girişleri hedeflenecek:
 
-**Test kapsamı genişletildi.** Önceki tek entegrasyon testine
-(vulnerable/safe örnek dosyaları üzerinden) ek olarak birim seviyesinde
-`test_rule_model.py` (RuleEngine.classify) ve `test_taint_engine.py`
-(source, çok-adımlı propagation, BinOp, JoinedStr, sanitizer'ın
-`sanitized_for` içeriğini doğrulayan test, sink, temiz/bilinmeyen
-değer) eklendi.
+```text
+request.args
+request.form
+request.values
+request.json
+```
+
+Daha geniş request metadata'ları ve diğer giriş yüzeyleri sonraki aşamalara bırakılabilir.
+
+### M5 Sanitizer kapsamı
+
+İlk sürümde HTML text bağlamı için:
+
+```text
+html.escape
+markupsafe.escape
+Markup.escape
+```
+
+gibi açıkça HTML escaping amacı taşıyan işlemler hedeflenecek.
+
+Sanitization context:
+
+```text
+html-text
+```
+
+olarak modellenir.
+
+SQL için sanitization sağlayan işlemler otomatik olarak XSS sanitizer'ı kabul edilmez.
+
+### M5 Sink kapsamı
+
+İlk sürüm için aday sink'ler:
+
+```text
+Response
+make_response
+Markup
+```
+
+olarak belirlenmiştir.
+
+`return tainted_value` gibi generic return sink'leri mevcut engine'e bu milestone içinde özel bir XSS mantığı olarak eklenmeyecektir.
+
+### M5 kapsam dışı
+
+Şimdilik:
+
+- Stored XSS
+- DOM-based XSS
+- Jinja template context analizi
+- SSTI
+- HTML context'inin ayrıntılı analizi
+- Inter-procedural taint propagation
+- Control-flow analysis
+
+M5 kapsamı dışındadır.
+
+### M5 mimari kararı
+
+XSS kuralı mümkün olduğunca mevcut `taint_engine.py` değiştirilmeden `rules/` ve test katmanlarında uygulanmalıdır.
+
+Eğer mevcut abstractions bunun için yetersiz görünürse, core engine'e doğrudan özel-case eklemek yerine önce yeni bir mimari karar kayda geçirilmelidir.
 
 ## Açık tasarım borcu (bilinçli olarak ertelendi)
 
-- **Multi-source provenance yok** — `merge_states()` birden fazla
-  tainted parçayı birleştirirken source/kind bilgisini ilk parçadan
-  alıyor, ikinci bir source varsa kaybediyor.
-- **`analyze_expression` fallback'i CLEAN, UNKNOWN değil** —
-  desteklenmeyen bir AST düğümü "bilmiyorum" yerine "temiz" sayılıyor,
-  false negative riski var.
-- **Control flow modellenmiyor** — `if`/`try`/`except` dallanmaları
-  taint durumunu etkilemiyor, motor sıralı kod varsayıyor.
-
-Üçü de MVP kapsamını bilinçli olarak küçük tutmak için şimdilik
-ertelendi (bkz. `AGENTS.md`).
+- **Multi-source provenance yok** — `merge_states()` birden fazla tainted parçayı birleştirirken source/kind bilgisini ilk parçadan alıyor, diğer source bilgileri kaybolabiliyor.
+- **`analyze_expression` fallback'i CLEAN, UNKNOWN değil** — desteklenmeyen bir AST düğümü "bilmiyorum" yerine "temiz" sayılabiliyor; bu false negative riski oluşturuyor.
+- **Control flow modellenmiyor** — `if` / `try` / `except` gibi farklı dallanmalar tam data-flow modeliyle analiz edilmiyor.
+- **Return sink abstraction yok** — tainted bir return değerini generic sink olarak modelleyen ayrı bir abstraction henüz bulunmuyor.
+- **Keyword argument sink/sanitizer desteği sınırlı** — mevcut model ağırlıklı olarak pozisyonel argümanları kontrol ediyor.
+- **Tam type inference yok** — `module` alanı şemada bulunsa da MVP eşleştirmesinde henüz gerçek tip çözümlemesi yapılmıyor.
