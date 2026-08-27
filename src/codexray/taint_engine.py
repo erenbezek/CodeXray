@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, replace
 
+from .call_model import CallModel, CallModelRegistry, default_call_model_registry
 from .rule_model import RuleEngine, RuleMatch, resolve_qualified_name
 
 
@@ -75,8 +76,17 @@ def merge_states(*states: TaintState) -> TaintState:
 
 
 class TaintAnalyzer(ast.NodeVisitor):
-    def __init__(self, rule_engine: RuleEngine):
+    def __init__(
+        self,
+        rule_engine: RuleEngine,
+        call_model_registry: CallModelRegistry | None = None,
+    ):
         self.rule_engine = rule_engine
+        self.call_model_registry = (
+            call_model_registry
+            if call_model_registry is not None
+            else default_call_model_registry()
+        )
         self.env: dict[str, TaintState] = {}
         self.findings: list[Finding] = []
 
@@ -170,9 +180,35 @@ class TaintAnalyzer(ast.NodeVisitor):
                 sanitized_for=tuple(set(inner.sanitized_for) | new_categories),
             )
 
+        model = self.call_model_registry.match(node)
+        if model is not None:
+            return self._apply_call_model(node, qname, model)
+
         # Siradan cagri: MVP intra-procedural oldugu icin arguman taint'i
         # donus degerine tasinmiyor (bilincli bilgi kaybi, v0.2'de kapanacak).
         return CLEAN
+
+    def _apply_call_model(
+        self, node: ast.Call, qname: str, model: CallModel
+    ) -> TaintState:
+        """Apply explicit return-value semantics for a known library call."""
+        if model.output != "return" or not model.preserves_taint:
+            return CLEAN
+
+        selected_states = [
+            self.analyze_expression(node.args[index])
+            for index in model.input_selectors
+            if 0 <= index < len(node.args)
+        ]
+        if not selected_states:
+            return CLEAN
+
+        state = merge_states(*selected_states)
+        if not state.tainted:
+            return CLEAN
+        if not model.preserves_sanitization:
+            state = replace(state, sanitized_for=())
+        return replace(state, path=state.path + (qname,))
 
     def _check_sinks(self, node: ast.Call, qname: str, sink_matches: list[RuleMatch]) -> None:
         for match in sink_matches:
