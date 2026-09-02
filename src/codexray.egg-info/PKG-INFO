@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: codexray
-Version: 0.1.0
-Summary: Taint-tracking tabanli, modular bir statik guvenlik tarama araci (staj projesi).
-Requires-Python: >=3.11
