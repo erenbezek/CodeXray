@@ -229,7 +229,7 @@ Eğer mevcut abstractions bunun için yetersiz görünürse, core engine'e doğr
 - **`analyze_expression` fallback'i CLEAN, UNKNOWN değil** — desteklenmeyen bir AST düğümü "bilmiyorum" yerine "temiz" sayılabiliyor; bu false negative riski oluşturuyor.
 - **Control flow modellenmiyor** — `if` / `try` / `except` gibi farklı dallanmalar tam data-flow modeliyle analiz edilmiyor.
 - **Return sink abstraction yok** — tainted bir return değerini generic sink olarak modelleyen ayrı bir abstraction henüz bulunmuyor.
-- **Keyword argument sink/sanitizer desteği sınırlı** — mevcut model ağırlıklı olarak pozisyonel argümanları kontrol ediyor.
+- ~~**Keyword argument sink/sanitizer desteği sınırlı**~~ — Shared Call-Argument Binding ile kapatıldı (bkz. aşağıdaki karar ve uygulama notu).
 - **Tam type inference yok** — `module` alanı şemada bulunsa da MVP eşleştirmesinde henüz gerçek tip çözümlemesi yapılmıyor.
 
 
@@ -539,3 +539,103 @@ Amaç:
 Aynı argument-binding mekanizmasının `CallModel`, sink ve sanitizer katmanlarında kullanılabilmesi, CodeXray'in farklı güvenlik kurallarında aynı veri-akışı mantığını yeniden kullanmasını sağlar.
 
 Bu nedenle keyword argument desteği ayrı ayrı vulnerability rule'larına eklenmeyecek; ortak generic abstraction üzerinden uygulanacaktır.
+
+### Uygulama notu
+
+Karar uygulandı. Uygulama sırasında netleştirilen noktalar:
+
+**Abstraction'ın yeri.** `ArgumentSelector` ve `CallArgumentBinder` yeni bir modüle (`src/codexray/call_arguments.py`) konuldu; `rule_model.py` içine değil. İki gerekçe:
+
+1. Argument binding güvenlik anlamı taşımaz — `rule_model.py`'nin sorumluluğu source/sanitizer/sink semantiğidir.
+2. `call_model.py` zaten `rule_model.py`'yi import ediyor; ortak abstraction'ı üçüncü ve bağımsız bir modüle koymak dairesel import riskini tamamen ortadan kaldırıyor.
+
+**Geriye dönük uyumluluk.** `int` kısayolu korundu: `as_selector(0) == positional(0)`. Mevcut `dangerous_arguments=(0,)` ve `input_selectors=(0,)` tanımlarının hiçbiri değiştirilmek zorunda kalmadı.
+
+**`SanitizerPattern.input_selectors`.** Sanitizer'ın hangi argümanı temizlediğini şimdiye kadar hiçbir yerde tanımlamıyorduk; traversal sabit olarak ilk pozisyonel argümanı okuyordu. Bu bilgi artık pattern'in kendi alanı, varsayılanı `(0,)` — yani önceki davranış.
+
+**`*args` politikası.** Karar metni yalnızca `**kwargs` için "agresif varsayım yapma" diyordu; aynı ilke varargs için de simetrik olarak uygulandı. Bir `*args` unpacking'i kendisinden sonraki tüm pozisyonları bilinmeyen bir miktarda kaydırdığı için, `*args`'ın bulunduğu veya sonrasındaki pozisyonel selector'lar hiçbir şeye bağlanmaz. Öncesindeki pozisyonlar hâlâ çözülebilir.
+
+Bu politikanın **sink tarafında bir false negative olduğu açıkça kayda geçmelidir.** İki katmanın risk profili zıttır:
+
+- *Propagation* için bağlamamak muhafazakârdır — bilinmeyen veriyi tainted saymayız, false positive üretmeyiz.
+- *Sink* için bağlamamak **müsamahakârdır** — gerçek bir zafiyeti kaçırırız.
+
+Ölçüldü:
+
+```text
+x = request.args["q"]
+args = [x]
+Response(*args)     -> 0 bulgu
+```
+
+Bu davranış değişiklikten önce de aynıydı (regresyon değil), ancak "muhafazakâr seçim" olarak sunulması yanlıştır. Tek bir bağlama kuralının zıt risk profilli iki katmana aynen uygulanmasının sonucudur ve bilinçli olarak kabul edilen bir bilgi kaybıdır. Sink tarafında varargs'ı ele almak ayrı bir tasarım kararı gerektirir.
+
+**Negatif index artık bağlanmıyor.** Değişiklikten önce `_check_sinks` yalnızca üst sınırı kontrol ediyordu (`if arg_index >= len(node.args)`), dolayısıyla `dangerous_arguments=(-1,)` Python'un negatif indekslemesiyle "son argüman" olarak **çalışıyordu**. `_apply_call_model` ise zaten `0 <= index` ile korumalıydı — yani iki katman tutarsızdı. Yeni binder her iki katmanda da negatif index'i bağlamıyor.
+
+Repoda kullanan bir tanım yoktu ve tutarsızlığın giderilmesi doğrudur, ancak bu kod tarafından belgelenmiş bir davranışın değişmesidir. "Son argüman" semantiği ileride gerekirse açık bir selector olarak modellenmelidir, negatif index'in yan etkisi olarak değil.
+
+**Bağlanamayan sanitizer.** Bir sanitizer eşleşip hiçbir selector'ı bağlanamıyorsa (`sanitize(other=x)`), çağrı sanitize edilmiş sayılmaz; `_apply_sanitizers` `None` döner ve akış normal call-model yoluna düşer. Göremediğimiz bir input'u temizlediğimizi iddia etmemek, bilinmeyen çağrı politikasıyla tutarlı olan taraftır. Sonuç: false negative, false positive değil.
+
+**Sink argümanları merge edilmez.** Her seçili tehlikeli argüman ayrı ayrı değerlendirilir; `sink(user_input, body=user_input)` iki ayrı bulgu üretir. İki farklı argümandan gelen iki veri akışı iki ayrı bulgudur — bu önceki davranışın korunmasıdır.
+
+**`sanitized_for` artık sıralı.** Sanitizer yolundaki `tuple(set(...))` deterministik olmayan bir sıra üretiyordu. `merge_states()` ile tutarlı olacak şekilde `sorted()` eklendi. Tek kategorili mevcut testler etkilenmedi.
+
+**Selector kazanan tanımlar.** Gerçek imzalara göre `json.dumps` → `obj`, `html.escape` → `s` (markupsafe.escape / Markup.escape dahil), `Response` → `response` eklendi. Bu tanımların güncel biçimi için aşağıdaki "Parameter Modeli" kararına bakınız.
+
+`cursor.execute` CPython'da positional-only olduğu için SQL Injection kuralı değiştirilmedi — bu aynı zamanda geriye dönük uyumluluğun repo içindeki kanıtı.
+
+**Bilinen sınır.** `dangerous_arguments` tek bir `SinkPattern`'deki tüm target'lar için ortaktır. XSS sink pattern'i `Response` / `make_response` / `Markup` hedeflerini paylaştığı için `keyword("response")` üçü için de denenir. Pratikte zararsız (`make_response`'ın `response` adlı bir parametresi yok, dolayısıyla böyle bir çağrı zaten yazılmaz), ancak hedefe özgü selector gerekirse doğru çözüm pattern'i bölmektir.
+
+Güncel test sayısı için `docs/current-state.md`.
+
+## Parameter Modeli (Argument Selector v2)
+
+Shared Call-Argument Binding uygulandıktan sonra `ArgumentSelector`'ın yanlış kavramı modellediği tespit edildi.
+
+Selector "bir argüman"ı adlandırıyordu. Kuralların ihtiyacı olan ise "bir **parametre**" — pozisyonel indeksle, isimle veya her ikisiyle adreslenebilen tek bir şey. Sonuç: aynı sözdizimi iki farklı anlama geliyordu ve okuyan ayırt edemiyordu.
+
+    input_selectors=(0, keyword("s"))       # html.escape -> TEK parametre, iki yazım
+    input_selectors=(0, keyword("extra"))   # combine     -> İKİ ayrı parametre
+
+Ölçüldü: `html.escape(y, s=x)` çağrısında iki selector de bağlanıp merge ediliyordu. Geçerli Python'da bir parametre tek yolla geçildiği için gerçek kodda davranış doğruydu; sorun doğruluk değil, modelin alanı yanlış bölmesiydi.
+
+### Neden şimdi
+
+Maliyet kural sayısıyla artıyor — her yeni kural bu belirsiz sözdizimini kopyalar. Üçüncü kural (Path Manipulation) yazılmadan düzeltmek bir dosyaya, sonra düzeltmek üçüne dokunmak demektir.
+
+### Karar
+
+`ArgumentSelector` bir parametreyi temsil eder ve hem index hem name taşıyabilir:
+
+    parameter(0, "s")   # pozisyonel 0 varsa ona, yoksa keyword "s"e bağlanır
+    positional(0)       # = parameter(index=0)
+    keyword("s")        # = parameter(name="s")
+    0                   # = parameter(index=0)   (kısayol korunur)
+
+Bağlama sırası: **önce pozisyonel, sonra keyword, ilk eşleşen kazanır. Asla merge edilmez.** Geçerli Python'da bir parametre tek yolla geçilir, dolayısıyla tam olarak biri bağlanır. Her iki yazım da mevcutsa (geçersiz Python) pozisyonel kazanır ve keyword yok sayılır.
+
+Pozisyon `*args` nedeniyle çözülemiyorsa keyword yazımı denenir — `f(*rest, s=b)` çağrısında `s` hâlâ belirsizlik taşımaz.
+
+Ne index ne name taşıyan bir selector `ValueError` yükseltir; sessizce hiçbir şeye bağlanan bir tanım kural yazım hatasıdır, çalışma zamanı davranışı değil.
+
+`positional()` ve `keyword()` kaldırılmadı — `parameter()` bunların üstüne eklenen bir kümedir, yerine geçen değil. Shared Call-Argument Binding kararının öngördüğü kelime dağarcığı korunur.
+
+### Kazanç
+
+Tuple uzunluğu artık seçilen **parametre sayısına** eşittir:
+
+    input_selectors=(parameter(0, "s"),)                     # TEK
+    input_selectors=(parameter(0), parameter(name="extra"))  # İKİ
+
+Ölçülen davranış değişikliği: `Response(v, response=v)` artık iki değil **bir** bulgu üretir — tek parametre, tek veri akışı.
+
+### Geri alınan karar
+
+`str` → `keyword("object")` kaldırıldı. Shared Call-Argument Binding kararı yalnızca `json.dumps(obj=…)` istiyordu; `str(object=x)` gerçek kodda yok denecek kadar nadir ve bu ekleme onaylanmamış bir genişletmeydi. `str` tekrar yalnızca pozisyonel.
+
+### Kapsam dışı
+
+- `*args` / `**kwargs` politikası değişmez
+- Bilinmeyen çağrı politikası değişmez
+- Type inference, import alias resolution, inter-procedural analiz
+- Sink tarafında varargs ele alınması (ayrı karar)

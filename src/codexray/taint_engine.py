@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, replace
 
+from .call_arguments import CallArgumentBinder
 from .call_model import CallModel, CallModelRegistry, default_call_model_registry
 from .rule_model import RuleEngine, RuleMatch, resolve_qualified_name
 
@@ -167,18 +168,10 @@ class TaintAnalyzer(ast.NodeVisitor):
             )
 
         sanitizer_matches = [m for m in matches if m.role == "sanitizer"]
-        if sanitizer_matches and node.args:
-            inner = self.analyze_expression(node.args[0])
-            if not inner.tainted:
-                return inner
-            new_categories = {
-                cat for m in sanitizer_matches for cat in m.pattern.sanitizes_for
-            }
-            return replace(
-                inner,
-                path=inner.path + (qname,),
-                sanitized_for=tuple(set(inner.sanitized_for) | new_categories),
-            )
+        if sanitizer_matches:
+            sanitized = self._apply_sanitizers(node, qname, sanitizer_matches)
+            if sanitized is not None:
+                return sanitized
 
         model = self.call_model_registry.match(node)
         if model is not None:
@@ -188,6 +181,38 @@ class TaintAnalyzer(ast.NodeVisitor):
         # donus degerine tasinmiyor (bilincli bilgi kaybi, v0.2'de kapanacak).
         return CLEAN
 
+    def _apply_sanitizers(
+        self, node: ast.Call, qname: str, sanitizer_matches: list[RuleMatch]
+    ) -> TaintState | None:
+        """Sanitize the explicitly selected arguments of a sanitizer call.
+
+        Returns ``None`` when no selector binds, so the caller can fall through
+        to the call-model path -- a sanitizer whose input we cannot see must not
+        silently claim to have sanitized anything.
+        """
+        binder = CallArgumentBinder(node)
+        selected_states: list[TaintState] = []
+        new_categories: set[str] = set()
+
+        for match in sanitizer_matches:
+            bound = binder.bind_all(match.pattern.input_selectors)
+            if not bound:
+                continue
+            selected_states.extend(self.analyze_expression(arg) for arg in bound)
+            new_categories.update(match.pattern.sanitizes_for)
+
+        if not selected_states:
+            return None
+
+        inner = merge_states(*selected_states)
+        if not inner.tainted:
+            return inner
+        return replace(
+            inner,
+            path=inner.path + (qname,),
+            sanitized_for=tuple(sorted(set(inner.sanitized_for) | new_categories)),
+        )
+
     def _apply_call_model(
         self, node: ast.Call, qname: str, model: CallModel
     ) -> TaintState:
@@ -195,10 +220,10 @@ class TaintAnalyzer(ast.NodeVisitor):
         if model.output != "return" or not model.preserves_taint:
             return CLEAN
 
+        binder = CallArgumentBinder(node)
         selected_states = [
-            self.analyze_expression(node.args[index])
-            for index in model.input_selectors
-            if 0 <= index < len(node.args)
+            self.analyze_expression(argument)
+            for argument in binder.bind_all(model.input_selectors)
         ]
         if not selected_states:
             return CLEAN
@@ -211,6 +236,8 @@ class TaintAnalyzer(ast.NodeVisitor):
         return replace(state, path=state.path + (qname,))
 
     def _check_sinks(self, node: ast.Call, qname: str, sink_matches: list[RuleMatch]) -> None:
+        binder = CallArgumentBinder(node)
+
         for match in sink_matches:
             rule = match.rule
             pattern = match.pattern
@@ -218,10 +245,13 @@ class TaintAnalyzer(ast.NodeVisitor):
             # pattern'inin kendi kabul ettiği kategoriler kullanılıyor.
             required = set(pattern.requires_sanitization_for)
 
-            for arg_index in pattern.dangerous_arguments:
-                if arg_index >= len(node.args):
+            # Her tehlikeli arguman ayri ayri degerlendirilir (merge edilmez):
+            # iki farkli argumandan gelen iki ayri veri akisi iki ayri bulgudur.
+            for selector in pattern.dangerous_arguments:
+                argument = binder.bind(selector)
+                if argument is None:
                     continue
-                state = self.analyze_expression(node.args[arg_index])
+                state = self.analyze_expression(argument)
                 if not state.tainted:
                     continue
                 if required and required.issubset(set(state.sanitized_for)):

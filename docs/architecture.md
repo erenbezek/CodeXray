@@ -62,9 +62,43 @@ Rule
 CallTarget(qualified_name, module)  — eşleştirme birimi
 ```
 
-E�leştirme **qualified-name tabanlı** (`resolve_qualified_name()` AST'de
+E�leştirme **qualified-name tabanlı** (`resolve_qualified_name()` AST'de
 `Attribute`/`Name`/`Call`/`Subscript` zincirini `"cursor.execute"` gibi
 bir string'e çevirir), regex tabanlı değil. Gerekçe: `docs/design-decisions.md`.
+
+## Çağrı argümanlarının çözümlenmesi
+
+`CallModel`, sink ve sanitizer katmanlarının üçü de aynı soruyu sorar:
+"bu çağrı, benim ilgilendiğim argüman olarak hangi ifadeyi geçiriyor?"
+Cevap tek bir ortak abstraction'da toplanmıştır:
+
+```
+ast.Call
+  ├── positional arguments
+  └── keyword arguments
+          |
+          v
+  CallArgumentBinder          (src/codexray/call_arguments.py)
+          |
+          v
+  ArgumentSelector            — bir selector = bir PARAMETRE
+     ├── parameter(index, name)   — her iki yazım
+     ├── positional(index)        — düz int de kabul edilir
+     └── keyword(name)
+          |
+          v
+  CallModel / SinkPattern / SanitizerPattern
+```
+
+Bağlama sırası: önce pozisyonel, sonra keyword, **ilk eşleşen kazanır,
+asla merge edilmez** — gerçek bir çağrıda bir parametre tek yolla geçilir.
+Böylece tuple uzunluğu seçilen parametre sayısına eşittir.
+
+Binder muhafazakârdır: çözülemeyen bir selector tahmin üretmez, hiçbir
+şeye bağlanmaz. `**kwargs` içeriği ve `*args` sonrası pozisyonlar
+bilinmezdir — ve bilinmeyen, tainted değildir. Gerekçe:
+`docs/design-decisions.md` → "Shared Call-Argument Binding" ve
+"Parameter Modeli".
 
 ## Traversal sözleşmesi
 
@@ -88,3 +122,6 @@ sorar.
 | `foo(a)` (sink olmayan çağrı) | `Call` — env değişmez (bilinçli bilgi kaybı) |
 | `safe = sanitize(a)` | `Call` (sanitizer eşleşmesi) |
 | `sink(a)` | `Call` (sink eşleşmesi) → `Finding` |
+| `r = str(a)` / `json.dumps(a)` | `Call` (CallModel eşleşmesi) → return'e taint |
+| `sink(body=a)` / `escape(s=a)` | `Call` (keyword selector) |
+| `sink(**payload)` / `f(*args)` | `Call` — bağlanmaz (bilinçli bilgi kaybı) |

@@ -4,6 +4,7 @@ The rule deliberately contains only source, sanitizer, and sink patterns.
 Taint propagation and finding generation remain in the generic analyzer.
 """
 
+from codexray.call_arguments import parameter
 from codexray.rule_model import (
     CallTarget,
     Rule,
@@ -38,6 +39,8 @@ XSS_RULE = Rule(
                 CallTarget(qualified_name="markupsafe.escape"),
                 CallTarget(qualified_name="Markup.escape"),
             ),
+            # Tek parametre: uc hedefin de ilki `s`, pozisyonel veya keyword.
+            input_selectors=(parameter(0, "s"),),
         ),
     ),
     sinks=(
@@ -48,7 +51,8 @@ XSS_RULE = Rule(
                 CallTarget(qualified_name="make_response"),
                 CallTarget(qualified_name="Markup"),
             ),
-            dangerous_arguments=(0,),
+            # Tek parametre: Response icin `response`, digerleri icin pozisyonel.
+            dangerous_arguments=(parameter(0, "response"),),
             requires_sanitization_for=("html-text",),
         ),
     ),

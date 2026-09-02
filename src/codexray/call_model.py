@@ -11,6 +11,7 @@ import ast
 from dataclasses import dataclass
 from typing import Iterable, Literal
 
+from .call_arguments import ArgumentSelectorLike, parameter
 from .rule_model import CallTarget, matches_target, resolve_qualified_name
 
 
@@ -21,14 +22,16 @@ CallOutput = Literal["return"]
 class CallModel:
     """Data-flow semantics for one explicitly modelled call target.
 
-    ``input_selectors`` contains positional argument indexes whose states are
-    candidates for the call's return value.  Only the ``return`` output is
-    supported in this intraprocedural MVP.  Sanitization is deliberately
-    opt-in: arbitrary wrappers must not inherit a security-context marker.
+    ``input_selectors`` names the *parameters* whose states are candidates for
+    the call's return value -- one entry per parameter, resolved through the
+    shared :mod:`codexray.call_arguments` binder.  A plain int stays valid and
+    means that positional index.  Only the ``return`` output is supported in
+    this intraprocedural MVP.  Sanitization is deliberately opt-in: arbitrary
+    wrappers must not inherit a security-context marker.
     """
 
     target: CallTarget | str
-    input_selectors: tuple[int, ...] = (0,)
+    input_selectors: tuple[ArgumentSelectorLike, ...] = (0,)
     output: CallOutput = "return"
     preserves_taint: bool = True
     preserves_sanitization: bool = False
@@ -81,7 +84,7 @@ DEFAULT_CALL_MODELS: tuple[CallModel, ...] = (
     ),
     CallModel(
         target=CallTarget(qualified_name="json.dumps"),
-        input_selectors=(0,),
+        input_selectors=(parameter(0, "obj"),),
         preserves_taint=True,
         preserves_sanitization=False,
     ),
