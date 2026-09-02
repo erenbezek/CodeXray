@@ -19,6 +19,8 @@ import ast
 from dataclasses import dataclass
 from typing import Literal
 
+from .call_arguments import ArgumentSelectorLike
+
 MatchRole = Literal["source", "sanitizer", "sink"]
 
 
@@ -40,13 +42,17 @@ class SanitizerPattern:
     id: str
     sanitizes_for: tuple[str, ...]
     targets: tuple[CallTarget, ...]
+    input_selectors: tuple[ArgumentSelectorLike, ...] = (0,)
+    """Hangi parametrenin sanitize edildigi -- parametre basina bir giris.
+    Varsayilan ilk pozisyonel arguman (onceki davranis). parameter(0, "s")
+    ile html.escape(x) ve html.escape(s=x) ayni tanimla cozulur."""
 
 
 @dataclass(frozen=True)
 class SinkPattern:
     id: str
     targets: tuple[CallTarget, ...]
-    dangerous_arguments: tuple[int, ...]
+    dangerous_arguments: tuple[ArgumentSelectorLike, ...]
     requires_sanitization_for: tuple[str, ...] = ()
     """Bu sink'in kabul ettigi sanitizer kategorileri. Bos ise: herhangi bir
     tainted deger (sanitize durumuna bakilmaksizin) alarm uretir. Bilincli

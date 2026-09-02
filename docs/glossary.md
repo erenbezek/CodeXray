@@ -137,6 +137,53 @@ Belirli bir sanitizer'ı ve hangi güvenlik bağlamları için sanitization sağ
 
 Bir sink'i ve kontrol edilmesi gereken tehlikeli argümanları tanımlayan rule bileşeni.
 
+## CallModel
+
+Bir fonksiyon veya kütüphane çağrısının **veri akışı semantiğini** tanımlayan model: hangi argümanlardan, hangi çıktıya, hangi taint davranışıyla.
+
+`Rule` güvenlik anlamını (source/sanitizer/sink) tanımlarken `CallModel` yalnızca "bu çağrının dönüş değeri argümanlarından taint taşır mı" sorusunu cevaplar. Vulnerability-specific değildir.
+
+Örnek:
+
+```text
+str(user_input)        → tainted return
+json.dumps(user_input) → tainted return
+len(user_input)        → clean return
+```
+
+Açıkça modellenmemiş çağrılar otomatik olarak tainted kabul edilmez.
+
+## ArgumentSelector
+
+Bir çağrının hangi **parametresinin** kastedildiğini, çağrı yerini bilmeden tanımlayan seçici.
+
+Bir parametre pozisyonel indeksle, isimle veya her ikisiyle adreslenebilir — bu yüzden tek bir selector her iki yazımı da taşır:
+
+```text
+parameter(index, name)   # her iki yazım
+positional(index)        # = parameter(index=...)
+keyword(name)            # = parameter(name=...)
+```
+
+Geriye dönük uyumluluk için düz bir `int` de `positional(index)` anlamına gelir.
+
+Kritik ayrım — tuple uzunluğu **parametre sayısını** verir:
+
+```text
+(parameter(0, "s"),)                      -> TEK parametre, iki yazımı var
+(parameter(0), parameter(name="extra"))   -> İKİ ayrı parametre
+```
+
+## CallArgumentBinder
+
+Bir `ArgumentSelector`'ı somut bir `ast.Call` üzerinde çözen katman.
+
+Aynı mekanizma `CallModel`, sink ve sanitizer katmanlarında ortak olarak kullanılır.
+
+Önce pozisyonel yazımı, sonra keyword yazımını dener; **ilk eşleşen kazanır, asla merge etmez.** Gerçek bir çağrıda bir parametre tek yolla geçilir.
+
+Bilinçli olarak muhafazakârdır: çözülemeyen bir selector (eksik keyword, `**kwargs` içeriği, `*args` sonrası pozisyon) tahmin üretmez, hiçbir şeye bağlanmaz.
+
 ## Qualified Name
 
 Bir AST expression'ının nokta zinciri şeklindeki adı.

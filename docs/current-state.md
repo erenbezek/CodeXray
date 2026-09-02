@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-**M5 — XSS MVP **
+**M5.5 — Motor sağlamlaştırma (parameter modeli + konsolidasyon)**
 
 ## Working
 
@@ -23,12 +23,15 @@
 - CWE / severity metadata
 - SQL Injection rule
 - Reflected/server-side XSS rule (Python + Flask)
+- Generic `CallModel` / `CallModelRegistry` (explicit call-return propagation)
+- Shared call-argument binding (parametre başına tek selector, pozisyonel + keyword)
 - Vulnerable / safe examples
 - Automated tests
+- GitHub Actions CI (`.github/workflows/ci.yml`)
 
 ## Test Status
 
-30 passed
+67 passed
 
 ## Current SQL Injection Flow
 
@@ -73,6 +76,26 @@ Contains:
 - `RuleMatch`
 - `RuleEngine`
 - Qualified-name resolution and matching
+
+### `src/codexray/call_arguments.py`
+
+Contains:
+
+- `ArgumentSelector`
+- `parameter()` / `positional()` / `keyword()` selector constructors
+- `CallArgumentBinder`
+
+Resolves an `ast.Call`'s arguments through one shared abstraction, used by the
+`CallModel`, sink, and sanitizer layers alike. One selector names one
+*parameter*, which may be addressable positionally, by keyword, or both.
+
+### `src/codexray/call_model.py`
+
+Contains:
+
+- `CallModel`
+- `CallModelRegistry`
+- The default set of explicitly modelled library calls
 
 ### `src/codexray/taint_engine.py`
 
@@ -125,7 +148,6 @@ Contains vulnerable and safe example Python code.
 - Multi-source provenance
 - `UNKNOWN` taint state
 - LLM triage
-- CI integration
 
 ## Important Architectural Rules
 
