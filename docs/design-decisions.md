@@ -231,3 +231,311 @@ Eğer mevcut abstractions bunun için yetersiz görünürse, core engine'e doğr
 - **Return sink abstraction yok** — tainted bir return değerini generic sink olarak modelleyen ayrı bir abstraction henüz bulunmuyor.
 - **Keyword argument sink/sanitizer desteği sınırlı** — mevcut model ağırlıklı olarak pozisyonel argümanları kontrol ediyor.
 - **Tam type inference yok** — `module` alanı şemada bulunsa da MVP eşleştirmesinde henüz gerçek tip çözümlemesi yapılmıyor.
+
+
+## Generic Call-Return Propagation
+
+CodeXray'in mevcut taint engine'inde en önemli generic false-negative kaynağının, modellenmemiş fonksiyon çağrılarının dönüş değerinin `CLEAN` kabul edilmesi olduğu M5-03 validation sonrasında tespit edildi.
+
+Örneğin:
+
+    user_input = request.args["q"]
+    result = str(user_input)
+    Response(result)
+
+mevcut engine'de `user_input` tainted olmasına rağmen `str(user_input)` çağrısından sonra taint kaybolmaktadır.
+
+### Karar
+
+Generic taint engine'e explicit intraprocedural call-return propagation abstraction eklenecek.
+
+Bu abstraction, yalnızca açıkça modellenmiş fonksiyonların seçilmiş input argümanlarından return değerine taint aktarılmasına izin verecek.
+
+Önerilen model:
+
+    CallModel
+    ├── target
+    ├── input_selectors
+    ├── output = return
+    ├── preserves_taint
+    └── preserves_sanitization
+
+Örneğin:
+
+    str(user_input)
+        → tainted return
+
+    json.dumps(user_input)
+        → tainted return
+
+    len(user_input)
+        → clean return
+
+Bilinmeyen fonksiyon çağrıları otomatik olarak tainted kabul edilmeyecek.
+
+### Rule ve CallModel ayrımı
+
+`Rule` güvenlik anlamını tanımlar:
+
+    Rule
+      → source
+      → sanitizer
+      → sink
+
+`CallModel` ise fonksiyon veya kütüphane çağrısının veri akışı semantiğini tanımlar:
+
+    CallModel
+      → hangi argümanlardan
+      → hangi çıktıya
+      → hangi taint davranışıyla
+
+CallModel vulnerability-specific olmayacak. SQL Injection veya XSS rule'larının içine generic propagation mantığı eklenmeyecek.
+
+### TaintState
+
+Mevcut `TaintState` modeli korunacak.
+
+Aşağıdaki alanların değiştirilmesi zorunlu görülmedi:
+
+- `tainted`
+- `source`
+- `kind`
+- `path`
+- `sanitized_for`
+
+Call-return propagation sırasında mevcut provenance korunacak ve çağrı path'e dahil edilecek.
+
+`sanitized_for` bilgisi yalnızca CallModel açıkça sanitization bilgisinin korunacağını belirtiyorsa taşınacak.
+
+Örneğin:
+
+    safe = html.escape(user_input)
+    result = unknown_helper(safe)
+    Response(result)
+
+ifadesinde `unknown_helper` için açık bir model bulunmadığından `result` otomatik olarak HTML-safe kabul edilmeyecek.
+
+### Neden bu karar alındı?
+
+Bu yaklaşım:
+
+- mevcut intra-procedural kapsamı korur,
+- kullanıcı tanımlı fonksiyonlar için henüz inter-procedural analiz gerektirmez,
+- mevcut SQL Injection ve XSS rule'larını değiştirmeden generic engine'i güçlendirir,
+- gelecekte keyword argument, sanitizer argument ve function summary abstraction'ları için temel oluşturur,
+- bilinmeyen fonksiyonları otomatik olarak tainted kabul ederek false positive üretme riskini azaltır.
+
+### Kapsam
+
+Bu karar yalnızca explicit intraprocedural call-return propagation içindir.
+
+Aşağıdakiler bu değişikliğin kapsamına dahil değildir:
+
+- Kullanıcı tanımlı fonksiyonlar arası taint propagation
+- Call graph
+- Recursive function analysis
+- Control-flow analysis
+- Full type inference
+- Import alias resolution
+- Stored XSS
+- Jinja/template analysis
+- DOM XSS
+- UNKNOWN state
+
+Bu konular ileride ayrı tasarım kararlarıyla ele alınabilir.
+
+### Beklenen test davranışı
+
+En azından aşağıdaki iki davranış birlikte doğrulanmalıdır:
+
+    result = str(user_input)
+    sink(result)
+
+→ taint korunmalı ve finding üretilebilmelidir.
+
+    result = len(user_input)
+    sink(result)
+
+→ taint return değerine taşınmamalı ve finding üretilmemelidir.
+
+Ayrıca:
+
+- mevcut SQL Injection testleri korunmalı,
+- mevcut XSS testleri korunmalı,
+- mevcut sanitizer davranışı korunmalı,
+- mevcut positional sink davranışı korunmalı,
+- CallModel bulunmayan çağrılarda mevcut davranış korunmalıdır.
+
+### Mimari sınır
+
+Bu değişiklik, CodeXray'i henüz inter-procedural bir analiz aracına dönüştürmez.
+
+Amaç, AST içindeki `Call` expression'larının dönüş değerini daha doğru modelleyerek source ile sink arasındaki veri akışında gereksiz taint kaybını azaltmaktır.
+
+Bu karar, M5-03 validation sonucunda tespit edilen generic engine sınırlamalarına dayanır.
+
+
+
+
+## Shared Call-Argument Binding
+
+Generic Call-Return Propagation sonrasında, `ast.Call` argümanlarının yalnızca positional index üzerinden modellenmesinin önemli bir generic sınırlama olduğu tespit edildi.
+
+Mevcut durumda:
+
+- `CallModel` yalnızca positional selector kullanıyor.
+- Sink'ler yalnızca positional `dangerous_arguments` kullanıyor.
+- Sanitizer analizi yalnızca ilk positional argümanı inceliyor.
+- `ast.Call.keywords` generic olarak analiz edilmiyor.
+
+Bu durum gerçek Python kullanım biçimlerinde false negative üretebiliyor:
+
+    json.dumps(obj=user_input)
+    Response(response=user_input)
+    html.escape(s=user_input)
+
+### Karar
+
+`ast.Call` içindeki positional ve keyword argümanları ortak şekilde çözümleyebilen bir argument-binding abstraction geliştirilecek.
+
+Önerilen yapı:
+
+    ast.Call
+      ├── positional arguments
+      └── keyword arguments
+              ↓
+      CallArgumentBinder
+              ↓
+      ArgumentSelector
+         ├── positional(index)
+         └── keyword(name)
+              ↓
+      CallModel / Sink / Sanitizer
+
+### CallModel
+
+Mevcut `CallModel` kaldırılmayacak.
+
+Mevcut positional selector davranışı geriye dönük korunacak:
+
+    input_selectors=(0,)
+
+Buna keyword selector desteği eklenecek.
+
+Örneğin:
+
+    json.dumps(obj=user_input)
+
+ifadesinde `obj` keyword argümanı seçilebilir hale gelecek.
+
+### Sink
+
+Mevcut:
+
+    dangerous_arguments=(0,)
+
+davranışı korunacak.
+
+Sink argument seçiminin ileride aynı shared argument-binding abstraction'ını kullanabilmesi sağlanacak.
+
+Böylece:
+
+    Response(response=user_input)
+
+gibi keyword sink kullanımları generic mekanizma üzerinden analiz edilebilecek.
+
+### Sanitizer
+
+Sanitizer argument seçimi de aynı abstraction üzerinden modellenebilecek.
+
+Örneğin:
+
+    html.escape(s=user_input)
+
+ifadesinde `s` keyword argümanı açıkça seçilebilecek.
+
+Sanitization davranışı değişmeyecek:
+
+- Sanitizer yalnızca açıkça seçilen input üzerinde çalışır.
+- `sanitized_for` yalnızca tanımlanan sanitizer semantiğine göre korunur.
+- Bilinmeyen çağrılar otomatik olarak sanitizer kabul edilmez.
+
+### `**kwargs`
+
+`**kwargs` için agresif varsayımlar yapılmayacak.
+
+Bir selector'ın belirli bir keyword'e bağlanması mümkün değilse, engine bilinmeyen bir argümanı otomatik olarak seçilmiş kabul etmeyecek.
+
+### Bilinmeyen Çağrılar
+
+Bu karar bilinmeyen function call'ları otomatik olarak tainted hale getirmez.
+
+Unknown-call politikası değişmeyecek.
+
+### Mimari Sınır
+
+Bu abstraction yalnızca çağrı argümanlarının çözümlemesini genelleştirir.
+
+Aşağıdakiler bu kararın kapsamına dahil değildir:
+
+- User-defined function summaries
+- Inter-procedural analysis
+- Call graph
+- Control-flow analysis
+- Type inference
+- Import alias resolution
+- Receiver/side-effect output modeling
+- Automatic unknown-call propagation
+- Varargs için agresif taint varsayımları
+
+### Uyumluluk
+
+Aşağıdaki mevcut davranışlar korunmalıdır:
+
+- SQL Injection source/sink analizi
+- XSS source/sink analizi
+- Mevcut positional CallModel'ler
+- `str()` taint propagation
+- `json.dumps()` taint propagation
+- `len()` non-propagation
+- Sanitization preservation/reset davranışı
+- Unknown-call davranışı
+
+### Test Gereksinimleri
+
+En az aşağıdaki durumlar doğrulanmalıdır:
+
+    json.dumps(obj=user_input)
+
+→ modeled keyword argument üzerinden taint return'e ulaşmalıdır.
+
+    Response(response=user_input)
+
+→ keyword sink argument üzerinden finding üretmelidir.
+
+    html.escape(s=user_input)
+
+→ keyword sanitizer argument üzerinden sanitization uygulamalıdır.
+
+Ayrıca:
+
+- positional selector backward compatibility
+- positional + keyword selector kombinasyonu
+- eksik keyword selector
+- birden fazla seçilmiş argümanın merge edilmesi
+- `**kwargs` davranışı
+- unknown-call davranışı
+
+test edilmelidir.
+
+### Neden bu karar alındı?
+
+Amaç belirli bir vulnerability rule'ına yeni özel durumlar eklemek değildir.
+
+Amaç:
+
+> `ast.Call` argümanlarının generic ve yeniden kullanılabilir biçimde modellenmesini sağlamak.
+
+Aynı argument-binding mekanizmasının `CallModel`, sink ve sanitizer katmanlarında kullanılabilmesi, CodeXray'in farklı güvenlik kurallarında aynı veri-akışı mantığını yeniden kullanmasını sağlar.
+
+Bu nedenle keyword argument desteği ayrı ayrı vulnerability rule'larına eklenmeyecek; ortak generic abstraction üzerinden uygulanacaktır.
