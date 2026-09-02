@@ -639,3 +639,38 @@ Tuple uzunluğu artık seçilen **parametre sayısına** eşittir:
 - Bilinmeyen çağrı politikası değişmez
 - Type inference, import alias resolution, inter-procedural analiz
 - Sink tarafında varargs ele alınması (ayrı karar)
+
+## M5.6 — Traversal statement kapsamı
+
+### Kök neden
+
+Traversal sözleşmesi yalnızca `visit_Assign` ve `visit_Expr` içinden
+`analyze_expression()` çağırıyordu. `Return`, `Raise`, `Assert`, annotated
+assignment ve augmented assignment gibi statement'lar expression slotlarındaki
+sink'leri ya da taint durumunu sessizce kaybediyordu.
+
+### Karar
+
+`Return`, `Raise` (exception ve cause), `Assert` (test ve message), `AugAssign`
+ve değerli `AnnAssign` için minimal visitor'lar eklendi. `x += value`,
+`x = x + value` ile aynı olmak üzere mevcut `env[x]` durumu ile value durumu
+`merge_states()` kullanılarak birleştirilir. `AnnAssign` sadece value taşıyan
+`Name` hedeflerini günceller.
+
+Comprehension expression slotları (`elt`, dict `key`/`value`, generator `iter`
+ve `ifs`) sink tespiti için analiz edilir; comprehension sonucu `CLEAN` kalır.
+Nested sink'leri kaybetmemek için bilinmeyen bir outer call'ın argümanları
+analiz edilir, fakat return değeri yine `CLEAN` kalır.
+
+### Gövdeli statement tuzağı
+
+`If`, `While`, `For`, `With`, `Try` ve `FunctionDef` için visitor eklenmedi.
+Bu düğümler `generic_visit()` ile gövdelerini zaten geziyor; eksik bir
+`visit_X` uygulaması gövdeyi ziyaret etmeden mevcut sink tespitini bozabilir.
+
+### Ertelenen semantikler
+
+- `Attribute` / `Subscript` augmented ve annotated assignment hedefleri
+- Konteyner-vs-eleman taint propagation
+- For/with target binding
+- Return sink abstraction

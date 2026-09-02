@@ -3,7 +3,8 @@ Taint motoru: TaintState + TaintAnalyzer
 
 Traversal sozlesmesi:
   Expression  -> analyze_expression(node) -> TaintState
-  Statement   -> visit_Assign / visit_Expr -> env guncellenir / Finding uretilir
+  Statement   -> expression tasiyan secili statement visitor'lari expression
+                 slotlarini analiz eder; env guncellenir / Finding uretilir
 
 Traversal hicbir yerde kurala ozgu bilgi tasimaz (orn. "sql" veya
 "execute" gibi string'ler burada gecmez) -- butun karar RuleEngine'e
@@ -103,6 +104,34 @@ class TaintAnalyzer(ast.NodeVisitor):
     def visit_Expr(self, node: ast.Expr) -> None:
         self.analyze_expression(node.value)
 
+    def visit_Return(self, node: ast.Return) -> None:
+        if node.value is not None:
+            self.analyze_expression(node.value)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        value_state = self.analyze_expression(node.value)
+        if not isinstance(node.target, ast.Name):
+            return
+        combined = merge_states(self.env.get(node.target.id, CLEAN), value_state)
+        self.env[node.target.id] = self._extend_path(combined, node.target.id)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is None or not isinstance(node.target, ast.Name):
+            return
+        value_state = self.analyze_expression(node.value)
+        self.env[node.target.id] = self._extend_path(value_state, node.target.id)
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        if node.exc is not None:
+            self.analyze_expression(node.exc)
+        if node.cause is not None:
+            self.analyze_expression(node.cause)
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        self.analyze_expression(node.test)
+        if node.msg is not None:
+            self.analyze_expression(node.msg)
+
     def _extend_path(self, state: TaintState, name: str) -> TaintState:
         if not state.tainted:
             return state
@@ -152,6 +181,43 @@ class TaintAnalyzer(ast.NodeVisitor):
         ]
         return merge_states(*parts) if parts else CLEAN
 
+    def _analyze_List(self, node: ast.List) -> TaintState:
+        """Analyze elements for nested sinks without tainting the container."""
+        for element in node.elts:
+            self.analyze_expression(element)
+        return CLEAN
+
+    def _analyze_ListComp(self, node: ast.ListComp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_SetComp(self, node: ast.SetComp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_GeneratorExp(self, node: ast.GeneratorExp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_DictComp(self, node: ast.DictComp) -> TaintState:
+        self._analyze_comprehension((node.key, node.value), node.generators)
+        return CLEAN
+
+    def _analyze_comprehension(
+        self,
+        yielded: ast.expr | tuple[ast.expr, ast.expr],
+        generators: list[ast.comprehension],
+    ) -> None:
+        yielded_expressions = (
+            yielded if isinstance(yielded, tuple) else (yielded,)
+        )
+        for expression in yielded_expressions:
+            self.analyze_expression(expression)
+        for generator in generators:
+            self.analyze_expression(generator.iter)
+            for condition in generator.ifs:
+                self.analyze_expression(condition)
+
     def _analyze_Call(self, node: ast.Call) -> TaintState:
         matches = self.rule_engine.classify(node)
         qname = resolve_qualified_name(node) or "<call>"
@@ -179,6 +245,15 @@ class TaintAnalyzer(ast.NodeVisitor):
 
         # Siradan cagri: MVP intra-procedural oldugu icin arguman taint'i
         # donus degerine tasinmiyor (bilincli bilgi kaybi, v0.2'de kapanacak).
+        # Eslestirilmeyen bir cagrida argumanlardaki nested sink'ler ifade
+        # degerlendirmesi sirasinda gorunur olmali; return degeri CLEAN kalir.
+        # Rule/call-model eslesmelerinin argumanlari zaten kendi semantik
+        # yollarinda analiz edildigi icin burada tekrar dolaşilmaz.
+        if not matches:
+            for argument in node.args:
+                self.analyze_expression(argument)
+            for keyword in node.keywords:
+                self.analyze_expression(keyword.value)
         return CLEAN
 
     def _apply_sanitizers(
