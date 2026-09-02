@@ -1,0 +1,17 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Packaging / build ciktilari
+*.egg-info/
+build/
+dist/
+
+# Test arac cache'leri
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sanal ortamlar
+.venv/
+venv/
