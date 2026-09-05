@@ -67,6 +67,26 @@ def test_annotation_without_value_leaves_environment_unchanged():
     assert "x" not in analyzer.env
 
 
+def test_annotated_attribute_assignment_still_analyzes_value():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "obj.attr: str = Response(v)\n"
+    )
+
+    assert analyzer.env["v"].tainted
+    assert len(analyzer.findings) == 1
+
+
+def test_augmented_attribute_assignment_still_analyzes_value():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "obj.attr += Response(v)\n"
+    )
+
+    assert analyzer.env["v"].tainted
+    assert len(analyzer.findings) == 1
+
+
 def test_raise_expression_detects_nested_response_sink():
     analyzer = _analyze("v = request.args['q']\nraise E(Response(v))\n")
 
@@ -104,6 +124,70 @@ def test_comprehension_container_result_remains_clean():
 
     assert analyzer.env["v"].tainted
     assert not analyzer.env["x"].tainted
+
+
+def test_list_literal_analyzes_nested_sink():
+    analyzer = _analyze("v = request.args['q']\nx = [Response(v)]\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_tuple_literal_analyzes_nested_sink():
+    analyzer = _analyze("v = request.args['q']\nx = (Response(v),)\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_set_literal_analyzes_nested_sink():
+    analyzer = _analyze("v = request.args['q']\nx = {Response(v)}\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_dict_literal_analyzes_nested_value_sink():
+    analyzer = _analyze("v = request.args['q']\nx = {'k': Response(v)}\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_dict_literal_analyzes_nested_key_sink():
+    analyzer = _analyze("v = request.args['q']\nx = {Response(v): 'val'}\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_container_literal_analyzes_nested_sink():
+    analyzer = _analyze("v = request.args['q']\nx = [[Response(v)]]\n")
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_container_literals_remain_clean_even_with_tainted_elements():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "list_value = [v]\n"
+        "tuple_value = (v,)\n"
+        "dict_value = {'k': v}\n"
+    )
+
+    assert analyzer.env["list_value"].tainted is False
+    assert analyzer.env["tuple_value"].tainted is False
+    assert analyzer.env["dict_value"].tainted is False
+
+
+def test_starred_argument_analyzes_nested_sink():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "f(*[Response(v)])\n"
+    )
+
+    assert len(analyzer.findings) == 1
 
 
 @pytest.mark.parametrize(

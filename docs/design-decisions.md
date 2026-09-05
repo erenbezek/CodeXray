@@ -654,13 +654,26 @@ sink'leri ya da taint durumunu sessizce kaybediyordu.
 `Return`, `Raise` (exception ve cause), `Assert` (test ve message), `AugAssign`
 ve değerli `AnnAssign` için minimal visitor'lar eklendi. `x += value`,
 `x = x + value` ile aynı olmak üzere mevcut `env[x]` durumu ile value durumu
-`merge_states()` kullanılarak birleştirilir. `AnnAssign` sadece value taşıyan
-`Name` hedeflerini günceller.
+`merge_states()` kullanılarak birleştirilir. `AnnAssign` value'yu hedef türü
+kontrolünden önce analiz eder; böylece `Attribute`/`Subscript` hedeflerinde
+nested sink kaybolmaz. `env` yalnızca value taşıyan `Name` hedefleri için
+güncellenir.
+
+`List`, `Tuple`, `Set` ve `Dict` literal'lerinin alt ifadeleri nested sink
+tespiti için analiz edilir; container sonucunun kendisi `CLEAN` kalır.
+`Dict` için hem key hem value, `Starred` için `node.value` analiz edilir.
+Bu, container'ın taint durumunu elemanlarından türetmeden iç içe sink'leri
+görünür kılar.
 
 Comprehension expression slotları (`elt`, dict `key`/`value`, generator `iter`
-ve `ifs`) sink tespiti için analiz edilir; comprehension sonucu `CLEAN` kalır.
-Nested sink'leri kaybetmemek için bilinmeyen bir outer call'ın argümanları
-analiz edilir, fakat return değeri yine `CLEAN` kalır.
+ve `ifs`) de aynı amaçla analiz edilir; comprehension sonucu `CLEAN` kalır.
+
+Bir `Call` düğümünün tüm doğrudan argümanları (positional, keyword, `*args`
+ve `**kwargs` değerleri) `_analyze_Call` başında tam olarak bir kez analiz
+edilir ve AST expression düğümüyle anahtarlanan bir cache'te tutulur.
+Sink, sanitizer ve CallModel yolları bu hazır state'leri kullanır; nested
+sink'ler outer çağrının rule/call-model eşleşmesine bağlı değildir.
+Bilinmeyen çağrının return değeri yine `CLEAN` kalır.
 
 ### Gövdeli statement tuzağı
 
@@ -671,6 +684,7 @@ Bu düğümler `generic_visit()` ile gövdelerini zaten geziyor; eksik bir
 ### Ertelenen semantikler
 
 - `Attribute` / `Subscript` augmented ve annotated assignment hedefleri
-- Konteyner-vs-eleman taint propagation
+- Konteyner-vs-eleman taint propagation (`List`, `Tuple`, `Set`, `Dict` ve
+  `Starred` için de geçerli)
 - For/with target binding
 - Return sink abstraction

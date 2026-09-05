@@ -115,21 +115,25 @@ sorar.
 
 Kapsanan govdesiz statement'lar: `Assign`, `Expr`, `Return`, `AugAssign`,
 `AnnAssign`, `Raise` ve `Assert`. `AugAssign` ve değerli `AnnAssign` yalnızca
-`Name` hedefini `env`'de günceller; `Attribute` ve `Subscript` hedefleri
-object/container state modeli gerektirdiği için kapsam dışıdır.
+`Name` hedefini `env`'de günceller; `AnnAssign` değer ifadesi hedef
+`Attribute`/`Subscript` olsa da önce analiz edilir. Bu hedefler object/container
+state modeli gerektirdiği için `env` güncellemesi kapsam dışıdır.
 
-`ListComp`, `SetComp`, `DictComp` ve `GeneratorExp` kendi yielded expression,
-generator `iter` ve `if` slotlarını sink tespiti için analiz eder; konteyner
-değerinin kendisi `CLEAN` kalır. Konteyner-vs-eleman propagation ve for/with
-target binding ertelenmiştir.
+`List`, `Tuple`, `Set` ve `Dict` literal'lerinin alt ifadeleri sink tespiti
+için analiz edilir; `Dict` için key ve value birlikte taranır. `Starred`
+`node.value` üzerinden aynı sözleşmeyi izler. Container değerinin kendisi
+`CLEAN` kalır. `ListComp`, `SetComp`, `DictComp` ve `GeneratorExp` de kendi
+yielded expression, generator `iter` ve `if` slotlarını analiz eder.
+Konteyner-vs-eleman propagation ve for/with target binding ertelenmiştir.
 
 `If`, `While`, `For`, `With`, `Try` ve `FunctionDef` için özel visitor
 bulunmaz. `ast.NodeVisitor.generic_visit()` mevcut gövde traversal'ını korur;
 bu statement'lara eksik bir visitor eklemek gövdelerin atlanmasına yol açar.
 
-`return value` bir sink değildir. Bilinmeyen çağrıların return değeri de
-`CLEAN` kalır; yalnızca argümanlarındaki nested sink'ler expression traversal
-sırasında görünür.
+`return value` bir sink değildir. Her `Call` düğümünün positional, keyword,
+`*args` ve `**kwargs` değerleri `_analyze_Call` başında tam olarak bir kez
+analiz edilir; sink, sanitizer ve CallModel yolları bu hazır state'leri
+kullanır. Bilinmeyen çağrıların return değeri `CLEAN` kalır.
 
 ## Desteklenen AST senaryoları (SQL Injection üzerinden doğrulandı)
 
