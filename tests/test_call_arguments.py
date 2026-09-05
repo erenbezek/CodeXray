@@ -24,6 +24,7 @@ from codexray.rule_model import (
     SourcePattern,
 )
 from codexray.taint_engine import TaintAnalyzer
+from rules.sql_injection import SQL_INJECTION_RULE
 from rules.xss import XSS_RULE
 
 
@@ -364,3 +365,79 @@ def test_html_escape_keyword_argument_prevents_xss_finding():
 
     assert analyzer.findings == []
     assert "html-text" in analyzer.env["safe"].sanitized_for
+
+
+def test_nested_sink_in_non_dangerous_sql_argument_is_analyzed_once():
+    analyzer = TaintAnalyzer(RuleEngine([SQL_INJECTION_RULE, XSS_RULE]))
+    analyzer.visit(
+        ast.parse(
+            "value = request.args['q']\n"
+            "cursor.execute('SELECT 1', Response(value))\n"
+        )
+    )
+
+    assert len(analyzer.findings) == 1
+    assert analyzer.findings[0].rule_id == "xss"
+
+
+def test_nested_sink_in_unknown_positional_call_is_analyzed():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "unknown(Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sink_in_unknown_keyword_call_is_analyzed():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "unknown(payload=Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sink_in_kwargs_value_is_analyzed():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "unknown(**{'payload': Response(value)})\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sink_in_sink_argument_is_not_reported_twice():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "Response(Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sink_in_sanitizer_argument_is_not_reported_twice():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "html.escape(Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sink_in_call_model_argument_is_not_reported_twice():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "json.dumps(Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_sinks_in_positional_and_keyword_arguments_are_both_reported():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "Response(value, status=Response(value))\n"
+    )
+
+    assert len(analyzer.findings) == 2

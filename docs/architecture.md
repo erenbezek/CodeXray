@@ -104,13 +104,36 @@ bilinmezdir — ve bilinmeyen, tainted değildir. Gerekçe:
 
 ```
 Expression  -> analyze_expression(node) -> TaintState
-Statement   -> visit_Assign / visit_Expr -> env günceller / Finding üretir
+Statement   -> ilgili expression slotları visitor tarafından analiz edilir;
+               env güncellenir / Finding üretilir
 ```
 
 `env: dict[str, TaintState]` her değişkenin o anki taint durumunu
 tutar. Traversal, hangi düğümün source/sanitizer/sink olduğuna asla
 kendisi karar vermez — her seferinde `RuleEngine.classify(node)`'a
 sorar.
+
+Kapsanan govdesiz statement'lar: `Assign`, `Expr`, `Return`, `AugAssign`,
+`AnnAssign`, `Raise` ve `Assert`. `AugAssign` ve değerli `AnnAssign` yalnızca
+`Name` hedefini `env`'de günceller; `AnnAssign` değer ifadesi hedef
+`Attribute`/`Subscript` olsa da önce analiz edilir. Bu hedefler object/container
+state modeli gerektirdiği için `env` güncellemesi kapsam dışıdır.
+
+`List`, `Tuple`, `Set` ve `Dict` literal'lerinin alt ifadeleri sink tespiti
+için analiz edilir; `Dict` için key ve value birlikte taranır. `Starred`
+`node.value` üzerinden aynı sözleşmeyi izler. Container değerinin kendisi
+`CLEAN` kalır. `ListComp`, `SetComp`, `DictComp` ve `GeneratorExp` de kendi
+yielded expression, generator `iter` ve `if` slotlarını analiz eder.
+Konteyner-vs-eleman propagation ve for/with target binding ertelenmiştir.
+
+`If`, `While`, `For`, `With`, `Try` ve `FunctionDef` için özel visitor
+bulunmaz. `ast.NodeVisitor.generic_visit()` mevcut gövde traversal'ını korur;
+bu statement'lara eksik bir visitor eklemek gövdelerin atlanmasına yol açar.
+
+`return value` bir sink değildir. Her `Call` düğümünün positional, keyword,
+`*args` ve `**kwargs` değerleri `_analyze_Call` başında tam olarak bir kez
+analiz edilir; sink, sanitizer ve CallModel yolları bu hazır state'leri
+kullanır. Bilinmeyen çağrıların return değeri `CLEAN` kalır.
 
 ## Desteklenen AST senaryoları (SQL Injection üzerinden doğrulandı)
 
@@ -119,6 +142,8 @@ sorar.
 | `a = source` | `Assign` |
 | `b = a` | `Assign` (value: `Name`) |
 | `c = a + b` / f-string | `BinOp` / `JoinedStr` |
+| `c = a or b` / `a and b` | `BoolOp` — tüm operand state'leri merge edilir |
+| `c = a if test else b` | `IfExp` — `body` / `orelse` merge edilir; `test` yalnızca nested sink için analiz edilir |
 | `foo(a)` (sink olmayan çağrı) | `Call` — env değişmez (bilinçli bilgi kaybı) |
 | `safe = sanitize(a)` | `Call` (sanitizer eşleşmesi) |
 | `sink(a)` | `Call` (sink eşleşmesi) → `Finding` |

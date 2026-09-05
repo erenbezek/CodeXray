@@ -639,3 +639,89 @@ Tuple uzunluğu artık seçilen **parametre sayısına** eşittir:
 - Bilinmeyen çağrı politikası değişmez
 - Type inference, import alias resolution, inter-procedural analiz
 - Sink tarafında varargs ele alınması (ayrı karar)
+
+## M5.6 — Traversal statement kapsamı
+
+### Kök neden
+
+Traversal sözleşmesi yalnızca `visit_Assign` ve `visit_Expr` içinden
+`analyze_expression()` çağırıyordu. `Return`, `Raise`, `Assert`, annotated
+assignment ve augmented assignment gibi statement'lar expression slotlarındaki
+sink'leri ya da taint durumunu sessizce kaybediyordu.
+
+### Karar
+
+`Return`, `Raise` (exception ve cause), `Assert` (test ve message), `AugAssign`
+ve değerli `AnnAssign` için minimal visitor'lar eklendi. `x += value`,
+`x = x + value` ile aynı olmak üzere mevcut `env[x]` durumu ile value durumu
+`merge_states()` kullanılarak birleştirilir. `AnnAssign` value'yu hedef türü
+kontrolünden önce analiz eder; böylece `Attribute`/`Subscript` hedeflerinde
+nested sink kaybolmaz. `env` yalnızca value taşıyan `Name` hedefleri için
+güncellenir.
+
+`List`, `Tuple`, `Set` ve `Dict` literal'lerinin alt ifadeleri nested sink
+tespiti için analiz edilir; container sonucunun kendisi `CLEAN` kalır.
+`Dict` için hem key hem value, `Starred` için `node.value` analiz edilir.
+Bu, container'ın taint durumunu elemanlarından türetmeden iç içe sink'leri
+görünür kılar.
+
+Comprehension expression slotları (`elt`, dict `key`/`value`, generator `iter`
+ve `ifs`) de aynı amaçla analiz edilir; comprehension sonucu `CLEAN` kalır.
+
+Bir `Call` düğümünün tüm doğrudan argümanları (positional, keyword, `*args`
+ve `**kwargs` değerleri) `_analyze_Call` başında tam olarak bir kez analiz
+edilir ve AST expression düğümüyle anahtarlanan bir cache'te tutulur.
+Sink, sanitizer ve CallModel yolları bu hazır state'leri kullanır; nested
+sink'ler outer çağrının rule/call-model eşleşmesine bağlı değildir.
+Bilinmeyen çağrının return değeri yine `CLEAN` kalır.
+
+### Gövdeli statement tuzağı
+
+`If`, `While`, `For`, `With`, `Try` ve `FunctionDef` için visitor eklenmedi.
+Bu düğümler `generic_visit()` ile gövdelerini zaten geziyor; eksik bir
+`visit_X` uygulaması gövdeyi ziyaret etmeden mevcut sink tespitini bozabilir.
+
+### Ertelenen semantikler
+
+- `Attribute` / `Subscript` augmented ve annotated assignment hedefleri
+- Konteyner-vs-eleman taint propagation (`List`, `Tuple`, `Set`, `Dict` ve
+  `Starred` için de geçerli)
+- For/with target binding
+- Return sink abstraction
+
+## M5.7 — BoolOp ve IfExp expression propagation
+
+### Kök neden
+
+Handler'ı olmayan expression düğümleri `analyze_expression()` fallback'inde
+sessizce `CLEAN` dönüyordu. Bu, Flask uygulamalarında yaygın olan
+`request.args.get("q") or "default"` benzeri boolean fallback kalıplarında
+ve conditional expression'larda, source modeli tarafından tainted olarak
+bilinen operandın taint'inin kaybolmasına yol açıyordu. `request.args.get()`
+method source modellemesi bu karardan ayrı, rule-level bir konudur.
+
+### Karar
+
+`BoolOp` için tüm operand state'leri `merge_states()` ile birleştirilir.
+Boolean expression çalışma zamanında operandlardan birini döndürdüğü için,
+herhangi bir tainted operand sonucu tainted yapar. `sanitized_for` için mevcut
+kesişim davranışı korunur: bir operand sanitize, diğeri değilse sonuç o
+bağlamda sanitize sayılmaz.
+
+`IfExp` için yalnızca `body` ve `orelse` state'leri birleştirilir. `test`
+ayrıca analiz edilir; böylece koşul içindeki nested sink görünür olur. Ancak
+test'in state'i sonuç state'ine katılmaz. Koşuldan sonuç değerine taint taşımak
+implicit flow modellemek olur ve control-flow analysis gerektirir; bu MVP'nin
+kapsamı dışındadır.
+
+### Bilinen boşluklar
+
+Aşağıdaki expression/statement slotları bilinçli olarak ertelenmiştir:
+
+- `UnaryOp`
+- `Subscript` slice
+- `Lambda` gövdesi
+- `NamedExpr` (walrus)
+- `if` / `while` test'i
+- `for` iter'i
+- `with` context'i

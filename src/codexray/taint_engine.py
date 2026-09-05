@@ -3,7 +3,8 @@ Taint motoru: TaintState + TaintAnalyzer
 
 Traversal sozlesmesi:
   Expression  -> analyze_expression(node) -> TaintState
-  Statement   -> visit_Assign / visit_Expr -> env guncellenir / Finding uretilir
+  Statement   -> expression tasiyan secili statement visitor'lari expression
+                 slotlarini analiz eder; env guncellenir / Finding uretilir
 
 Traversal hicbir yerde kurala ozgu bilgi tasimaz (orn. "sql" veya
 "execute" gibi string'ler burada gecmez) -- butun karar RuleEngine'e
@@ -103,6 +104,36 @@ class TaintAnalyzer(ast.NodeVisitor):
     def visit_Expr(self, node: ast.Expr) -> None:
         self.analyze_expression(node.value)
 
+    def visit_Return(self, node: ast.Return) -> None:
+        if node.value is not None:
+            self.analyze_expression(node.value)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        value_state = self.analyze_expression(node.value)
+        if not isinstance(node.target, ast.Name):
+            return
+        combined = merge_states(self.env.get(node.target.id, CLEAN), value_state)
+        self.env[node.target.id] = self._extend_path(combined, node.target.id)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is None:
+            return
+        value_state = self.analyze_expression(node.value)
+        if not isinstance(node.target, ast.Name):
+            return
+        self.env[node.target.id] = self._extend_path(value_state, node.target.id)
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        if node.exc is not None:
+            self.analyze_expression(node.exc)
+        if node.cause is not None:
+            self.analyze_expression(node.cause)
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        self.analyze_expression(node.test)
+        if node.msg is not None:
+            self.analyze_expression(node.msg)
+
     def _extend_path(self, state: TaintState, name: str) -> TaintState:
         if not state.tainted:
             return state
@@ -152,13 +183,92 @@ class TaintAnalyzer(ast.NodeVisitor):
         ]
         return merge_states(*parts) if parts else CLEAN
 
+    def _analyze_BoolOp(self, node: ast.BoolOp) -> TaintState:
+        """A boolean expression returns one operand, so merge every operand."""
+        return merge_states(*(self.analyze_expression(value) for value in node.values))
+
+    def _analyze_IfExp(self, node: ast.IfExp) -> TaintState:
+        """Merge result branches; the test is analyzed only for nested sinks.
+
+        Taint in the test does not taint the result: that would model implicit
+        flow, which requires control-flow analysis and remains out of scope.
+        """
+        self.analyze_expression(node.test)
+        return merge_states(
+            self.analyze_expression(node.body),
+            self.analyze_expression(node.orelse),
+        )
+
+    def _analyze_List(self, node: ast.List) -> TaintState:
+        """Analyze elements for nested sinks without tainting the container."""
+        for element in node.elts:
+            self.analyze_expression(element)
+        return CLEAN
+
+    def _analyze_Tuple(self, node: ast.Tuple) -> TaintState:
+        """Analyze elements for nested sinks without tainting the container."""
+        for element in node.elts:
+            self.analyze_expression(element)
+        return CLEAN
+
+    def _analyze_Set(self, node: ast.Set) -> TaintState:
+        """Analyze elements for nested sinks without tainting the container."""
+        for element in node.elts:
+            self.analyze_expression(element)
+        return CLEAN
+
+    def _analyze_Dict(self, node: ast.Dict) -> TaintState:
+        """Analyze keys and values for nested sinks without tainting the container."""
+        for key, value in zip(node.keys, node.values):
+            if key is not None:
+                self.analyze_expression(key)
+            self.analyze_expression(value)
+        return CLEAN
+
+    def _analyze_Starred(self, node: ast.Starred) -> TaintState:
+        """Analyze the unpacked value without tainting the enclosing call/container."""
+        self.analyze_expression(node.value)
+        return CLEAN
+
+    def _analyze_ListComp(self, node: ast.ListComp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_SetComp(self, node: ast.SetComp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_GeneratorExp(self, node: ast.GeneratorExp) -> TaintState:
+        self._analyze_comprehension(node.elt, node.generators)
+        return CLEAN
+
+    def _analyze_DictComp(self, node: ast.DictComp) -> TaintState:
+        self._analyze_comprehension((node.key, node.value), node.generators)
+        return CLEAN
+
+    def _analyze_comprehension(
+        self,
+        yielded: ast.expr | tuple[ast.expr, ast.expr],
+        generators: list[ast.comprehension],
+    ) -> None:
+        yielded_expressions = (
+            yielded if isinstance(yielded, tuple) else (yielded,)
+        )
+        for expression in yielded_expressions:
+            self.analyze_expression(expression)
+        for generator in generators:
+            self.analyze_expression(generator.iter)
+            for condition in generator.ifs:
+                self.analyze_expression(condition)
+
     def _analyze_Call(self, node: ast.Call) -> TaintState:
+        argument_states = self._analyze_call_arguments(node)
         matches = self.rule_engine.classify(node)
         qname = resolve_qualified_name(node) or "<call>"
 
         sink_matches = [m for m in matches if m.role == "sink"]
         if sink_matches:
-            self._check_sinks(node, qname, sink_matches)
+            self._check_sinks(node, qname, sink_matches, argument_states)
 
         source_matches = [m for m in matches if m.role == "source"]
         if source_matches:
@@ -169,20 +279,45 @@ class TaintAnalyzer(ast.NodeVisitor):
 
         sanitizer_matches = [m for m in matches if m.role == "sanitizer"]
         if sanitizer_matches:
-            sanitized = self._apply_sanitizers(node, qname, sanitizer_matches)
+            sanitized = self._apply_sanitizers(
+                node, qname, sanitizer_matches, argument_states
+            )
             if sanitized is not None:
                 return sanitized
 
         model = self.call_model_registry.match(node)
         if model is not None:
-            return self._apply_call_model(node, qname, model)
+            return self._apply_call_model(node, qname, model, argument_states)
 
         # Siradan cagri: MVP intra-procedural oldugu icin arguman taint'i
         # donus degerine tasinmiyor (bilincli bilgi kaybi, v0.2'de kapanacak).
+        # Her arguman (positional, keyword, *args ve **kwargs degeri) tam
+        # olarak bir kez, cagrinin basinda analiz edildi.  Eslestirme sonucu
+        # bu sozlesmeyi degistirmez; bilinmeyen cagrinin donusu yine CLEAN'dir.
         return CLEAN
 
+    def _analyze_call_arguments(self, node: ast.Call) -> dict[ast.AST, TaintState]:
+        """Analyze every direct call argument exactly once.
+
+        The binder returns the original AST expression nodes, so the cache can
+        be keyed by node identity and all call semantic paths can reuse the
+        already-computed state without re-traversing nested expressions.
+        """
+        argument_states: dict[ast.AST, TaintState] = {}
+        for argument in node.args:
+            if argument not in argument_states:
+                argument_states[argument] = self.analyze_expression(argument)
+        for keyword in node.keywords:
+            if keyword.value not in argument_states:
+                argument_states[keyword.value] = self.analyze_expression(keyword.value)
+        return argument_states
+
     def _apply_sanitizers(
-        self, node: ast.Call, qname: str, sanitizer_matches: list[RuleMatch]
+        self,
+        node: ast.Call,
+        qname: str,
+        sanitizer_matches: list[RuleMatch],
+        argument_states: dict[ast.AST, TaintState],
     ) -> TaintState | None:
         """Sanitize the explicitly selected arguments of a sanitizer call.
 
@@ -198,7 +333,7 @@ class TaintAnalyzer(ast.NodeVisitor):
             bound = binder.bind_all(match.pattern.input_selectors)
             if not bound:
                 continue
-            selected_states.extend(self.analyze_expression(arg) for arg in bound)
+            selected_states.extend(argument_states[arg] for arg in bound)
             new_categories.update(match.pattern.sanitizes_for)
 
         if not selected_states:
@@ -214,7 +349,11 @@ class TaintAnalyzer(ast.NodeVisitor):
         )
 
     def _apply_call_model(
-        self, node: ast.Call, qname: str, model: CallModel
+        self,
+        node: ast.Call,
+        qname: str,
+        model: CallModel,
+        argument_states: dict[ast.AST, TaintState],
     ) -> TaintState:
         """Apply explicit return-value semantics for a known library call."""
         if model.output != "return" or not model.preserves_taint:
@@ -222,7 +361,7 @@ class TaintAnalyzer(ast.NodeVisitor):
 
         binder = CallArgumentBinder(node)
         selected_states = [
-            self.analyze_expression(argument)
+            argument_states[argument]
             for argument in binder.bind_all(model.input_selectors)
         ]
         if not selected_states:
@@ -235,7 +374,13 @@ class TaintAnalyzer(ast.NodeVisitor):
             state = replace(state, sanitized_for=())
         return replace(state, path=state.path + (qname,))
 
-    def _check_sinks(self, node: ast.Call, qname: str, sink_matches: list[RuleMatch]) -> None:
+    def _check_sinks(
+        self,
+        node: ast.Call,
+        qname: str,
+        sink_matches: list[RuleMatch],
+        argument_states: dict[ast.AST, TaintState],
+    ) -> None:
         binder = CallArgumentBinder(node)
 
         for match in sink_matches:
@@ -251,7 +396,7 @@ class TaintAnalyzer(ast.NodeVisitor):
                 argument = binder.bind(selector)
                 if argument is None:
                     continue
-                state = self.analyze_expression(argument)
+                state = argument_states[argument]
                 if not state.tainted:
                     continue
                 if required and required.issubset(set(state.sanitized_for)):
