@@ -768,6 +768,19 @@ but the difference is intentional and visible until container semantics are
 designed. Container-vs-element propagation for list/tuple/set/dict literals
 remains deferred.
 
+### Literal receivers cannot be matched
+
+Matching is qualified-name based, and a literal contributes no name:
+`resolve_qualified_name()` builds a dotted string out of `Name`/`Attribute`
+links, so `'clean'.replace('x', tainted)` resolves to `None` and reaches no
+model at all. Binding the literal to a name first (`t = 'clean'` then
+`t.replace('x', tainted)`) works normally.
+
+This is a property of qualified-name matching rather than of receiver
+propagation, and it applies equally to `[1, 2].pop()` and similar literal
+receivers. Closing it would require matching on expression shape instead of
+name — a separate decision, not taken here.
+
 ### Known gaps
 
 `format` and `join` are deferred along with the previously documented
