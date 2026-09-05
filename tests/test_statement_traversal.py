@@ -191,6 +191,120 @@ def test_starred_argument_analyzes_nested_sink():
 
 
 @pytest.mark.parametrize(
+    ("expression", "expected_tainted"),
+    [
+        ("v or 'default'", True),
+        ("'default' or v", True),
+        ("v and 'default'", True),
+        ("'a' or 'b'", False),
+    ],
+    ids=("tainted-left-or", "tainted-right-or", "tainted-left-and", "clean"),
+)
+def test_boolop_merges_all_operand_states(expression: str, expected_tainted: bool):
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        f"x = {expression}\n"
+    )
+
+    assert analyzer.env["x"].tainted is expected_tainted
+
+
+def test_boolop_result_reaching_sink_produces_finding():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "Response(v or 'default')\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_boolop_analyzes_nested_sink_operand():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "x = Response(v) or y\n"
+    )
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_boolop_mixed_sanitization_is_not_preserved():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "s = html.escape(v) or v\n"
+        "Response(s)\n"
+    )
+
+    assert analyzer.env["s"].tainted
+    assert analyzer.env["s"].sanitized_for == ()
+    assert len(analyzer.findings) == 1
+
+
+def test_boolop_shared_sanitization_is_preserved():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "s = html.escape(v) or html.escape(v)\n"
+        "Response(s)\n"
+    )
+
+    assert analyzer.env["s"].tainted
+    assert analyzer.env["s"].sanitized_for == ("html-text",)
+    assert analyzer.findings == []
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_tainted"),
+    [
+        ("v if c else 'sabit'", True),
+        ("'sabit' if c else v", True),
+        ("'a' if c else 'b'", False),
+        ("'a' if v else 'b'", False),
+    ],
+    ids=("tainted-body", "tainted-orelse", "clean-branches", "no-implicit-flow"),
+)
+def test_ifexp_merges_only_result_branches(
+    expression: str, expected_tainted: bool
+):
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        f"x = {expression}\n"
+    )
+
+    assert analyzer.env["x"].tainted is expected_tainted
+
+
+def test_ifexp_analyzes_test_for_nested_sink_without_tainting_result():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "x = 'a' if Response(v) else 'b'\n"
+    )
+
+    assert analyzer.env["x"].tainted is False
+    assert len(analyzer.findings) == 1
+
+
+def test_ifexp_result_reaching_sink_produces_finding():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "Response(v if c else 'default')\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_ifexp_mixed_sanitization_is_not_preserved():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "s = html.escape(v) if c else v\n"
+        "Response(s)\n"
+    )
+
+    assert analyzer.env["s"].tainted
+    assert analyzer.env["s"].sanitized_for == ()
+    assert len(analyzer.findings) == 1
+
+
+@pytest.mark.parametrize(
     "statement",
     [
         "if c:\n    Response(v)",

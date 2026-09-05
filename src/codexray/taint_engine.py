@@ -183,6 +183,22 @@ class TaintAnalyzer(ast.NodeVisitor):
         ]
         return merge_states(*parts) if parts else CLEAN
 
+    def _analyze_BoolOp(self, node: ast.BoolOp) -> TaintState:
+        """A boolean expression returns one operand, so merge every operand."""
+        return merge_states(*(self.analyze_expression(value) for value in node.values))
+
+    def _analyze_IfExp(self, node: ast.IfExp) -> TaintState:
+        """Merge result branches; the test is analyzed only for nested sinks.
+
+        Taint in the test does not taint the result: that would model implicit
+        flow, which requires control-flow analysis and remains out of scope.
+        """
+        self.analyze_expression(node.test)
+        return merge_states(
+            self.analyze_expression(node.body),
+            self.analyze_expression(node.orelse),
+        )
+
     def _analyze_List(self, node: ast.List) -> TaintState:
         """Analyze elements for nested sinks without tainting the container."""
         for element in node.elts:

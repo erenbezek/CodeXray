@@ -688,3 +688,40 @@ Bu düğümler `generic_visit()` ile gövdelerini zaten geziyor; eksik bir
   `Starred` için de geçerli)
 - For/with target binding
 - Return sink abstraction
+
+## M5.7 — BoolOp ve IfExp expression propagation
+
+### Kök neden
+
+Handler'ı olmayan expression düğümleri `analyze_expression()` fallback'inde
+sessizce `CLEAN` dönüyordu. Bu, Flask uygulamalarında yaygın olan
+`request.args.get("q") or "default"` benzeri boolean fallback kalıplarında
+ve conditional expression'larda, source modeli tarafından tainted olarak
+bilinen operandın taint'inin kaybolmasına yol açıyordu. `request.args.get()`
+method source modellemesi bu karardan ayrı, rule-level bir konudur.
+
+### Karar
+
+`BoolOp` için tüm operand state'leri `merge_states()` ile birleştirilir.
+Boolean expression çalışma zamanında operandlardan birini döndürdüğü için,
+herhangi bir tainted operand sonucu tainted yapar. `sanitized_for` için mevcut
+kesişim davranışı korunur: bir operand sanitize, diğeri değilse sonuç o
+bağlamda sanitize sayılmaz.
+
+`IfExp` için yalnızca `body` ve `orelse` state'leri birleştirilir. `test`
+ayrıca analiz edilir; böylece koşul içindeki nested sink görünür olur. Ancak
+test'in state'i sonuç state'ine katılmaz. Koşuldan sonuç değerine taint taşımak
+implicit flow modellemek olur ve control-flow analysis gerektirir; bu MVP'nin
+kapsamı dışındadır.
+
+### Bilinen boşluklar
+
+Aşağıdaki expression/statement slotları bilinçli olarak ertelenmiştir:
+
+- `UnaryOp`
+- `Subscript` slice
+- `Lambda` gövdesi
+- `NamedExpr` (walrus)
+- `if` / `while` test'i
+- `for` iter'i
+- `with` context'i

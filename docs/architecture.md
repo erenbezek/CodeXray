@@ -142,6 +142,8 @@ kullanır. Bilinmeyen çağrıların return değeri `CLEAN` kalır.
 | `a = source` | `Assign` |
 | `b = a` | `Assign` (value: `Name`) |
 | `c = a + b` / f-string | `BinOp` / `JoinedStr` |
+| `c = a or b` / `a and b` | `BoolOp` — tüm operand state'leri merge edilir |
+| `c = a if test else b` | `IfExp` — `body` / `orelse` merge edilir; `test` yalnızca nested sink için analiz edilir |
 | `foo(a)` (sink olmayan çağrı) | `Call` — env değişmez (bilinçli bilgi kaybı) |
 | `safe = sanitize(a)` | `Call` (sanitizer eşleşmesi) |
 | `sink(a)` | `Call` (sink eşleşmesi) → `Finding` |
