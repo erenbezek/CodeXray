@@ -99,12 +99,31 @@ def test_f_string_propagates_xss_taint():
     )
 
 
-@pytest.mark.parametrize("source", ["request.args", "request.form", "request.values", "request.json"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "request.args",
+        "request.form",
+        "request.values",
+        "request.json",
+        "request.cookies",
+        "request.headers",
+        "request.data",
+        "request.files",
+    ],
+)
 def test_flask_request_sources_are_tainted(source: str):
     analyzer = _analyze(f"value = {source}['q']\n")
 
     assert analyzer.env["value"].tainted
     assert analyzer.env["value"].source == source
+
+
+def test_flask_get_json_source_is_tainted():
+    analyzer = _analyze("value = request.get_json()\n")
+
+    assert analyzer.env["value"].tainted
+    assert analyzer.env["value"].source == "request.get_json"
 
 
 def test_sql_sanitizer_does_not_sanitize_for_xss():

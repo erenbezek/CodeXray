@@ -1,5 +1,7 @@
 import ast
 
+import pytest
+
 from codexray.rule_model import RuleEngine
 from codexray.taint_engine import TaintAnalyzer
 from rules.sql_injection import SQL_INJECTION_RULE
@@ -73,3 +75,26 @@ def test_sink_with_sanitized_argument_produces_no_finding():
 def test_sink_with_clean_argument_produces_no_finding():
     a = _analyze("cursor.execute('SELECT 1')\n")
     assert a.findings == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "request.cookies",
+        "request.headers",
+        "request.data",
+        "request.files",
+    ],
+)
+def test_additional_flask_request_sources_are_tainted(source: str):
+    analyzer = _analyze(f"value = {source}\n")
+
+    assert analyzer.env["value"].tainted
+    assert analyzer.env["value"].source == source
+
+
+def test_get_json_is_an_additional_source():
+    analyzer = _analyze("value = request.get_json()\n")
+
+    assert analyzer.env["value"].tainted
+    assert analyzer.env["value"].source == "request.get_json"
