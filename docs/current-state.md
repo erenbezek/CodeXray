@@ -31,7 +31,7 @@
 
 ## Test Status
 
-106 passed
+121 passed
 
 ## Current SQL Injection Flow
 
