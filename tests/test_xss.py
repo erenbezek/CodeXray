@@ -99,12 +99,31 @@ def test_f_string_propagates_xss_taint():
     )
 
 
-@pytest.mark.parametrize("source", ["request.args", "request.form", "request.values", "request.json"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "request.args",
+        "request.form",
+        "request.values",
+        "request.json",
+        "request.cookies",
+        "request.headers",
+        "request.data",
+        "request.files",
+    ],
+)
 def test_flask_request_sources_are_tainted(source: str):
     analyzer = _analyze(f"value = {source}['q']\n")
 
     assert analyzer.env["value"].tainted
     assert analyzer.env["value"].source == source
+
+
+def test_flask_get_json_source_is_tainted():
+    analyzer = _analyze("value = request.get_json()\n")
+
+    assert analyzer.env["value"].tainted
+    assert analyzer.env["value"].source == "request.get_json"
 
 
 def test_sql_sanitizer_does_not_sanitize_for_xss():
@@ -128,3 +147,58 @@ def test_vulnerable_example_produces_finding():
 def test_safe_example_produces_no_finding():
     code = (EXAMPLES_DIR / "safe" / "xss.py").read_text()
     assert _analyze(code).findings == []
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "Response(request.args['q']).upper()\n",
+        "Response(request.args['q']).unknown_method()\n",
+        "result = Response(request.args['q']).upper()\n",
+    ],
+)
+def test_receiver_expression_is_analyzed_once_for_nested_sinks(code: str):
+    analyzer = _analyze(code)
+
+    assert len(analyzer.findings) == 1
+
+
+def test_nested_receiver_chain_does_not_double_report():
+    analyzer = _analyze("Response(Response(request.args['q']).upper())\n")
+
+    assert len(analyzer.findings) == 1
+
+
+def test_receiver_method_output_reaches_xss_sink():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "result = value.upper()\n"
+        "Response(result)\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+def test_html_sanitization_is_not_preserved_through_receiver_method():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "safe = html.escape(value)\n"
+        "result = safe.upper()\n"
+        "Response(result)\n"
+    )
+
+    assert len(analyzer.findings) == 1
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "request.args.get('q')",
+        "request.form.get('q')",
+        "request.args.getlist('q')",
+    ],
+)
+def test_request_receiver_methods_propagate_taint(expression: str):
+    analyzer = _analyze(f"result = {expression}\n")
+
+    assert analyzer.env["result"].tainted

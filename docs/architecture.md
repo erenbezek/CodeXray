@@ -130,10 +130,13 @@ Konteyner-vs-eleman propagation ve for/with target binding ertelenmiştir.
 bulunmaz. `ast.NodeVisitor.generic_visit()` mevcut gövde traversal'ını korur;
 bu statement'lara eksik bir visitor eklemek gövdelerin atlanmasına yol açar.
 
-`return value` bir sink değildir. Her `Call` düğümünün positional, keyword,
-`*args` ve `**kwargs` değerleri `_analyze_Call` başında tam olarak bir kez
-analiz edilir; sink, sanitizer ve CallModel yolları bu hazır state'leri
-kullanır. Bilinmeyen çağrıların return değeri `CLEAN` kalır.
+`return value` bir sink değildir. Her `Call` düğümünün receiver'ı
+(`node.func.value`) ve positional, keyword, `*args` ve `**kwargs` değerleri
+Python değerlendirme sırasıyla tam olarak bir kez analiz edilir; sink,
+sanitizer ve CallModel yolları bu hazır state'leri kullanır. CallModel'de
+`receiver_is_input=True` receiver state'ini return girdisi yapar; receiver
+argument selector'larından ayrıdır. Bilinmeyen veya modellenmemiş çağrıların
+return değeri `CLEAN` kalır.
 
 ## Desteklenen AST senaryoları (SQL Injection üzerinden doğrulandı)
 
@@ -148,5 +151,7 @@ kullanır. Bilinmeyen çağrıların return değeri `CLEAN` kalır.
 | `safe = sanitize(a)` | `Call` (sanitizer eşleşmesi) |
 | `sink(a)` | `Call` (sink eşleşmesi) → `Finding` |
 | `r = str(a)` / `json.dumps(a)` | `Call` (CallModel eşleşmesi) → return'e taint |
+| `r = a.upper()` / `a.lower().strip()` | `Call` — receiver CallModel ile return'e taint |
+| `r = a.get("k", fallback)` / `"x".replace("x", y)` | `Call` — receiver ve seçili argümanlar merge edilir |
 | `sink(body=a)` / `escape(s=a)` | `Call` (keyword selector) |
 | `sink(**payload)` / `f(*args)` | `Call` — bağlanmaz (bilinçli bilgi kaybı) |
