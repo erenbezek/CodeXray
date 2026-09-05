@@ -262,6 +262,11 @@ class TaintAnalyzer(ast.NodeVisitor):
                 self.analyze_expression(condition)
 
     def _analyze_Call(self, node: ast.Call) -> TaintState:
+        receiver_state = None
+        if isinstance(node.func, ast.Attribute):
+            # The receiver is a child expression and follows Python's
+            # evaluation order: analyze it exactly once before arguments.
+            receiver_state = self.analyze_expression(node.func.value)
         argument_states = self._analyze_call_arguments(node)
         matches = self.rule_engine.classify(node)
         qname = resolve_qualified_name(node) or "<call>"
@@ -287,7 +292,9 @@ class TaintAnalyzer(ast.NodeVisitor):
 
         model = self.call_model_registry.match(node)
         if model is not None:
-            return self._apply_call_model(node, qname, model, argument_states)
+            return self._apply_call_model(
+                node, qname, model, argument_states, receiver_state
+            )
 
         # Siradan cagri: MVP intra-procedural oldugu icin arguman taint'i
         # donus degerine tasinmiyor (bilincli bilgi kaybi, v0.2'de kapanacak).
@@ -354,16 +361,26 @@ class TaintAnalyzer(ast.NodeVisitor):
         qname: str,
         model: CallModel,
         argument_states: dict[ast.AST, TaintState],
+        receiver_state: TaintState | None,
     ) -> TaintState:
         """Apply explicit return-value semantics for a known library call."""
         if model.output != "return" or not model.preserves_taint:
             return CLEAN
 
+        # A receiver-input model cannot describe a bare function call.  This
+        # guard is important because target matching intentionally supports
+        # qualified-name suffixes (e.g. ``get`` matches ``obj.get``).
+        if model.receiver_is_input and receiver_state is None:
+            return CLEAN
+
         binder = CallArgumentBinder(node)
-        selected_states = [
+        selected_states: list[TaintState] = []
+        if model.receiver_is_input:
+            selected_states.append(receiver_state)
+        selected_states.extend(
             argument_states[argument]
             for argument in binder.bind_all(model.input_selectors)
-        ]
+        )
         if not selected_states:
             return CLEAN
 

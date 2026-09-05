@@ -25,13 +25,16 @@ class CallModel:
     ``input_selectors`` names the *parameters* whose states are candidates for
     the call's return value -- one entry per parameter, resolved through the
     shared :mod:`codexray.call_arguments` binder.  A plain int stays valid and
-    means that positional index.  Only the ``return`` output is supported in
-    this intraprocedural MVP.  Sanitization is deliberately opt-in: arbitrary
-    wrappers must not inherit a security-context marker.
+    means that positional index.  ``receiver_is_input`` independently includes
+    the receiver of a method call; the receiver is not an argument selector.
+    Only the ``return`` output is supported in this intraprocedural MVP.
+    Sanitization is deliberately opt-in: arbitrary wrappers must not inherit a
+    security-context marker.
     """
 
     target: CallTarget | str
     input_selectors: tuple[ArgumentSelectorLike, ...] = (0,)
+    receiver_is_input: bool = False
     output: CallOutput = "return"
     preserves_taint: bool = True
     preserves_sanitization: bool = False
@@ -92,6 +95,41 @@ DEFAULT_CALL_MODELS: tuple[CallModel, ...] = (
         target=CallTarget(qualified_name="len"),
         input_selectors=(0,),
         preserves_taint=False,
+        preserves_sanitization=False,
+    ),
+    # Methods whose return value preserves the receiver's string value.
+    *tuple(
+        CallModel(
+            target=CallTarget(qualified_name=name),
+            input_selectors=(),
+            receiver_is_input=True,
+            preserves_taint=True,
+            preserves_sanitization=False,
+        )
+        for name in (
+            "getlist",
+            "upper", "lower", "strip", "lstrip", "rstrip", "title",
+            "capitalize", "casefold", "swapcase", "splitlines", "zfill",
+            "expandtabs", "split", "rsplit", "encode", "decode",
+            "removeprefix", "removesuffix", "ljust", "rjust", "center",
+            "translate",
+        )
+    ),
+    *tuple(
+        CallModel(
+            target=CallTarget(qualified_name=name),
+            input_selectors=(parameter(1, "default"),),
+            receiver_is_input=True,
+            preserves_taint=True,
+            preserves_sanitization=False,
+        )
+        for name in ("get", "pop", "setdefault")
+    ),
+    CallModel(
+        target=CallTarget(qualified_name="replace"),
+        input_selectors=(parameter(1, "new"),),
+        receiver_is_input=True,
+        preserves_taint=True,
         preserves_sanitization=False,
     ),
 )

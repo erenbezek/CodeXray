@@ -725,3 +725,51 @@ Aşağıdaki expression/statement slotları bilinçli olarak ertelenmiştir:
 - `if` / `while` test'i
 - `for` iter'i
 - `with` context'i
+
+## M5.8 - Receiver propagation and call evaluation
+
+### Exactly-once receiver contract
+
+For every `Call`, the receiver (`node.func.value` when `node.func` is an
+`ast.Attribute`) is analyzed exactly once, before positional and keyword
+arguments, matching Python evaluation order. Sink, sanitizer, and CallModel
+paths consume the cached receiver state and never analyze it again. This keeps
+nested findings deterministic and prevents duplicate reports.
+
+### Receiver as a separate CallModel input
+
+`CallModel.receiver_is_input` is separate from `input_selectors`: selectors
+address call parameters, while the receiver is the object on which the method
+is invoked and is not an argument. A receiver-only model therefore uses
+`input_selectors=()` and `receiver_is_input=True`. If such a model is matched
+against a bare function name through suffix matching, it is not applied because
+there is no receiver.
+
+### Modeled methods
+
+Value-preserving string/request methods (for example `upper`, `strip`,
+`getlist`, `get`, and `replace`) merge the receiver and explicitly selected
+argument states, preserve taint, and reset sanitization unless a future model
+opts in to preserve it. Predicate/count methods (`startswith`, `isdigit`,
+`count`, and similar) remain non-propagating and return `CLEAN`. `format` and
+`join` remain out of scope because they require receiver plus variable-arity
+argument semantics.
+
+Qualified-name suffix matching is safe for these models with respect to taint:
+a clean receiver cannot become tainted merely because its method name matches;
+only a tainted receiver or selected tainted argument supplies taint.
+
+### Known inconsistency
+
+`v.split(',')` can return a tainted list through a receiver model, while the
+literal `[v]` remains `CLEAN`. These represent opposite propagation directions
+(deriving a container from a value versus deriving a container from elements),
+but the difference is intentional and visible until container semantics are
+designed. Container-vs-element propagation for list/tuple/set/dict literals
+remains deferred.
+
+### Known gaps
+
+`format` and `join` are deferred along with the previously documented
+`UnaryOp`, subscript slices, lambda bodies, walrus expressions, conditional and
+loop tests, and with-context expressions.

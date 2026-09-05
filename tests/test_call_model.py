@@ -152,3 +152,58 @@ def test_registry_matches_qualified_call_target():
 
     assert registry.match(node) is not None
     assert registry.match(node).target_name == "str"
+
+
+@pytest.mark.parametrize("method", ["upper", "lower", "strip", "getlist"])
+def test_receiver_method_models_propagate_taint(method: str):
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        f"result = value.{method}()\n"
+    )
+
+    assert analyzer.env["result"].tainted
+    assert method in analyzer.env["result"].path
+
+
+def test_receiver_method_chain_propagates_taint():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "result = value.lower().strip()\n"
+    )
+
+    assert analyzer.env["result"].tainted
+    assert analyzer.env["result"].path[-2:] == ("value.lower.strip", "result")
+
+
+def test_get_default_argument_is_an_additional_return_input():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "mapping = {}\n"
+        "result = mapping.get('q', value)\n"
+    )
+
+    assert analyzer.env["result"].tainted
+
+
+def test_clean_receiver_without_default_stays_clean():
+    analyzer = _analyze("mapping = {}\nresult = mapping.get('q')\n")
+
+    assert not analyzer.env["result"].tainted
+
+
+def test_replace_propagates_replacement_argument():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "result = 'clean'.replace('x', value)\n"
+    )
+
+    assert analyzer.env["result"].tainted
+
+
+def test_predicate_method_remains_non_propagating():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "result = value.startswith('x')\n"
+    )
+
+    assert not analyzer.env["result"].tainted
