@@ -2,7 +2,26 @@
 
 ## Current Milestone
 
-**M5.5 — Motor sağlamlaştırma (parameter modeli + konsolidasyon)**
+**Motor sağlamlaştırma tamamlandı.** Kategori #3'e (Path Manipulation) geçmeden
+önce taint motorundaki genel bilgi kayıpları kapatıldı. Sırayla:
+
+| Adım | Ne yapıldı | Durum |
+|---|---|---|
+| M5.1 | Generic call-return propagation (`CallModel`) | tamamlandı |
+| M5.5 | Shared call-argument binding + parameter modeli | tamamlandı |
+| M5.6 | Traversal statement kapsamı + argüman "tam bir kez" sözleşmesi | tamamlandı |
+| M5.7 | `BoolOp` / `IfExp` propagation | tamamlandı |
+| M5.8 | Receiver analizi + receiver propagation, genişletilmiş request source'ları | tamamlandı |
+
+**Sıradaki aday işler** (henüz karar verilmedi):
+
+1. `format` / `join` — `"... {}".format(kirli)` klasik bir SQLi kalıbı ve şu an
+   kaçırılıyor. İkisi de receiver + değişken sayıda argüman istiyor.
+2. Kalan ifade boşlukları — `UnaryOp`, subscript slice, lambda gövdesi, walrus.
+   Mekanik iş, tasarım kararı gerektirmiyor.
+3. M6 — Path Manipulation (roadmap'teki sıradaki kategori).
+
+Gerekçeler için `docs/roadmap.md` → "M5.5 / M5.6 neden araya girdi".
 
 ## Working
 
@@ -25,6 +44,12 @@
 - Reflected/server-side XSS rule (Python + Flask)
 - Generic `CallModel` / `CallModelRegistry` (explicit call-return propagation)
 - Shared call-argument binding (parametre başına tek selector, pozisyonel + keyword)
+- Statement kapsamı: `return`, `AugAssign`, `AnnAssign`, `raise`, `assert`
+- Comprehension ve konteyner literali alt ifadelerinin sink için analizi
+- `BoolOp` (`a or b`) ve `IfExp` (ternary) propagation
+- Receiver analizi (`Response(v).upper()` içindeki sink görünür)
+- Receiver propagation (`v.upper()`, `request.args.get('q')`, metot zincirleri)
+- Her çağrı argümanı ve receiver'ı **tam olarak bir kez** analiz edilir
 - Vulnerable / safe examples
 - Automated tests
 - GitHub Actions CI (`.github/workflows/ci.yml`)
@@ -120,15 +145,15 @@ Currently implemented:
 
 ### `tests/`
 
-Contains automated tests for:
-
-- Rule matching
-- Taint propagation
-- Source detection
-- Sanitizer behavior
-- Sink detection
-- SQL Injection behavior
-- XSS behavior
+| Dosya | Kapsam |
+|---|---|
+| `test_rule_model.py` | `RuleEngine` sınıflandırma, qualified-name eşleştirme |
+| `test_taint_engine.py` | Propagation, sanitizer, sink, `BinOp`, `JoinedStr` |
+| `test_sql_injection.py` | SQL Injection uçtan uca |
+| `test_xss.py` | XSS uçtan uca, örnek dosyalar |
+| `test_call_model.py` | `CallModel`, receiver propagation, modellenmiş metotlar |
+| `test_call_arguments.py` | Selector/binder, keyword argümanlar, çift raporlama |
+| `test_statement_traversal.py` | Statement kapsamı, konteynerler, `BoolOp`/`IfExp` |
 
 ### `examples/`
 
@@ -173,7 +198,25 @@ When multiple tainted values are merged, provenance is currently simplified to o
 
 ### Unsupported AST expressions
 
-Unsupported expression types may currently be treated as clean.
+Handler'ı olmayan bir ifade `CLEAN` kabul edilir — "bilmiyorum" değil "temiz".
+Bilinçli olarak açık bırakılan slotlar:
+
+```text
+UnaryOp (-x, not x)      Subscript slice (d[kirli])
+Lambda gövdesi           NamedExpr / walrus (x := kirli)
+if / while test'i        for iter'i          with context'i
+str.format()             str.join()
+```
+
+Ayrıca:
+
+- **Literal receiver eşleşmez.** `'sabit'.replace('x', kirli)` hiçbir modele
+  ulaşmaz çünkü literal'in nitelikli adı yoktur. Değişkene atanınca çalışır.
+- **Konteyner-vs-eleman tutarsızlığı.** `v.split(',')` tainted bir liste
+  döndürür ama `[v]` literali `CLEAN` kalır. İki farklı yön; konteyner
+  semantiği tasarlanana kadar görünür bir tutarsızlık.
+- **`*args` sink tarafında false negative.** `Response(*args)` bulgu üretmez.
+  Propagation için muhafazakâr, sink için müsamahakâr olan bilinçli bir seçim.
 
 ### No control-flow analysis
 
