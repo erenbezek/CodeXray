@@ -13,15 +13,33 @@
 | M5.7 | `BoolOp` / `IfExp` propagation | tamamlandı |
 | M5.8 | Receiver analizi + receiver propagation, genişletilmiş request source'ları | tamamlandı |
 
-**Sıradaki aday işler** (henüz karar verilmedi):
+**Sıradaki iş sırası** (karara bağlandı):
 
-1. `format` / `join` — `"... {}".format(kirli)` klasik bir SQLi kalıbı ve şu an
-   kaçırılıyor. İkisi de receiver + değişken sayıda argüman istiyor.
-2. Kalan ifade boşlukları — `UnaryOp`, subscript slice, lambda gövdesi, walrus.
-   Mekanik iş, tasarım kararı gerektirmiyor.
-3. M6 — Path Manipulation (roadmap'teki sıradaki kategori).
+| Adım | Ne | Durum |
+|---|---|---|
+| M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | sırada |
+| M5.10 | Variadic argument model (`os.path.join`, `sep.join`, `tpl.format`) | M5.9'dan sonra |
+| M6 | Path Manipulation | M5.10'dan sonra |
+| — | Literal receiver / shape-based matching | ertelendi |
 
-Gerekçeler için `docs/roadmap.md` → "M5.5 / M5.6 neden araya girdi".
+Sırayı belirleyen ölçümler:
+
+| Kalıp | Bugün |
+|---|---|
+| `with open(kirli) as f:` | 0 bulgu |
+| `for row in cursor.execute(q):` | 0 bulgu |
+| `if` / `while cursor.execute(q):` | 0 bulgu |
+| `os.path.join("/base", kirli)` | 0 bulgu |
+| `sep.join([kirli])` / `tpl.format(kirli)` | 0 bulgu |
+| `"SELECT {}".format(kirli)` | 0 bulgu — literal receiver, M5.10 kapsamı dışı |
+| `return Response(kirli)` | 1 bulgu |
+| `return kirli` (çıplak) | 0 bulgu — return sink abstraction hâlâ yok |
+| if / for / try **gövdesi** içindeki sink | 1 bulgu |
+
+Gerekçeler için `docs/roadmap.md` → "M5.9 / M5.10 neden M6'dan önce".
+
+**Açık karar:** M5.10'daki "kalan tüm argümanlar" selector'ının `*args`
+varlığında nasıl davranacağı, uygulamadan önce karara bağlanacak.
 
 ## Working
 
@@ -202,9 +220,8 @@ Handler'ı olmayan bir ifade `CLEAN` kabul edilir — "bilmiyorum" değil "temiz
 Bilinçli olarak açık bırakılan slotlar:
 
 ```text
-UnaryOp (-x, not x)      Subscript slice (d[kirli])
+UnaryOp (-x, not x)      Subscript slice (d[kirli:])
 Lambda gövdesi           NamedExpr / walrus (x := kirli)
-if / while test'i        for iter'i          with context'i
 str.format()             str.join()
 ```
 
@@ -217,6 +234,23 @@ Ayrıca:
   semantiği tasarlanana kadar görünür bir tutarsızlık.
 - **`*args` sink tarafında false negative.** `Response(*args)` bulgu üretmez.
   Propagation için muhafazakâr, sink için müsamahakâr olan bilinçli bir seçim.
+
+### Statement header slotları (ayrı kök neden)
+
+`if` / `while` test'i, `for` iter'i ve `with` context'i yukarıdaki listede
+değil, çünkü eksik olan bir *expression handler* değil bir *statement
+visitor*. `generic_visit()` bu düğümlerin çocuklarını geziyor ama başlık
+ifadesini hiç `analyze_expression()`'a vermiyor; sonuç taint kaybı değil,
+doğrudan **bulgu kaybı** — başlıkta duran sink hiç görülmüyor:
+
+```text
+with open(kirli) as f:          -> 0 bulgu
+for row in cursor.execute(q):   -> 0 bulgu
+```
+
+Gövdeler etkilenmiyor (`if True: cursor.execute(q)` -> 1 bulgu). Görünür
+asimetri: ternary'nin (`IfExp`) test'i M5.7'de analiz ediliyor, `if`
+statement'ının test'i edilmiyor. M5.9 bunu kapatacak.
 
 ### No control-flow analysis
 

@@ -786,3 +786,64 @@ name — a separate decision, not taken here.
 `format` and `join` are deferred along with the previously documented
 `UnaryOp`, subscript slices, lambda bodies, walrus expressions, conditional and
 loop tests, and with-context expressions.
+
+
+## M5.9 / M5.10 sıra kararı ve M5.6'nın bayatlamış gerekçesi
+
+### Kök neden
+
+`roadmap.md` M5.6'yı "Return sink abstraction" olarak adlandırıyor ve
+gerekçesini `return Response(tainted)` → 0 bulgu ölçümüne dayandırıyordu.
+`current-state.md` ise aynı numarayı traversal statement kapsamı için
+kullanıyordu: iki doküman aynı numarayı iki farklı işe veriyordu ve roadmap'in
+ölçümü, M5.6 uygulandıktan sonra güncellenmemişti.
+
+Yeniden ölçüldü:
+
+    return Response(tainted)   -> 1 bulgu    (visit_Return ile kapandi)
+    return tainted             -> 0 bulgu    (asil acik olan bu)
+
+Açık tasarım borcundaki "Return sink abstraction yok" maddesi geçerliliğini
+koruyor; kapsamı çıplak `return tainted`.
+
+### Karar: sıradaki iş ölçüme göre üçe bölündü
+
+Aday olarak duran "format / join" tek bir iş değil, iki ayrı karar:
+
+1. **Variadic argument model (M5.10).** Bir selector'ın "kalan tüm
+   argümanları" adlandırabilmesi. `os.path.join("/base", kirli)`,
+   `sep.join(parts)` ve `tpl.format(x)` bugün 0 bulgu üretiyor; üçü de bununla
+   kapanır.
+2. **Literal receiver eşleştirme (ertelendi).** `"SELECT {}".format(kirli)`
+   bununla kapanmaz. `resolve_qualified_name` literal receiver için `None`
+   döner, dolayısıyla çağrı hiçbir modele ya da kurala *ulaşmaz*. Kapatmak
+   nitelikli-ad yerine ifade şekli üzerinden eşleştirme gerektirir — M5.8'de
+   "Literal receivers cannot be matched" olarak kayda geçmişti ve ayrı bir
+   karar olarak ertelenmeye devam ediyor.
+
+Bu ikisinin önüne **M5.9 — statement header slotları** alındı. Ölçülen körlük:
+
+    with open(kirli) as f:          -> 0 bulgu
+    for row in cursor.execute(q):   -> 0 bulgu
+
+Kök neden eksik bir expression handler değil: `generic_visit()` bu düğümlerin
+gövdelerini geziyor ama başlık ifadesini `analyze_expression()`'a hiç
+vermiyor. Sonuç taint kaybı değil, doğrudan bulgu kaybı. `with open(...)`
+Path Manipulation'ın en yaygın yazımı olduğu için M5.9 M6'nın ön koşuludur:
+M6 bugün yazılsaydı amiral kalıbını kaçıran bir kural olarak yayınlanırdı.
+
+Sıra: **M5.9 → M5.10 → M6.**
+
+### M5.10 için uygulamadan önce karara bağlanacak konu
+
+"Kalan tüm argümanlar" selector'ının `*args` varlığındaki davranışı açık bir
+karar gerektirir. Mevcut politika pozisyonel selector'ları bir `*args`'tan
+sonra hiç bağlamıyor; variadic bir selector için aynı muhafazakârlığın ne
+anlama geldiği (hiç bağlanmama mı, yalnızca görünen argümanların bağlanması
+mı) henüz belirlenmemiştir. Bu karar alınmadan M5.10 uygulanmayacak.
+
+### Süreç notu
+
+M5.6'nın gerekçesi uygulama sonrası yeniden ölçülmediği için bayatladı. Bir
+sıralama gerekçesi olarak sunulan örnek, sunulmadan önce koda karşı
+ölçülmelidir.
