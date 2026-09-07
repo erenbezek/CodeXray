@@ -9,7 +9,7 @@ Hedef kod deposu
 AST ayrıştırıcı (ast.parse)
        |
        v
-Kural motoru (RuleEngine + rules/)
+Kural motoru (RuleEngine + codexray/rules/)
    taint | ast-structural | presence-check
        |
        v

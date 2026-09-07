@@ -74,7 +74,7 @@ Traversal kurala özgü ifadeler taşımamalı; örneğin `if function_name == "
 
 Traversal yalnızca `RuleEngine.classify(node)` gibi mekanizmalar üzerinden güvenlik anlamını sorgular.
 
-Yeni kategori eklemek mümkün olduğunca `rules/` altına yeni bir Rule eklemek anlamına gelmelidir.
+Yeni kategori eklemek mümkün olduğunca `codexray/rules/` altına yeni bir Rule eklemek anlamına gelmelidir.
 
 `RuleMatch` (`rule + role + pattern`) kullanılır. Çıplak tuple kullanılmamasının nedeni sink ve sanitizer tarafında pattern'e ait `dangerous_arguments`, `sanitizes_for` ve benzeri alanlara doğrudan erişilebilmesidir.
 
@@ -219,7 +219,7 @@ M5 kapsamı dışındadır.
 
 ### M5 mimari kararı
 
-XSS kuralı mümkün olduğunca mevcut `taint_engine.py` değiştirilmeden `rules/` ve test katmanlarında uygulanmalıdır.
+XSS kuralı mümkün olduğunca mevcut `taint_engine.py` değiştirilmeden `codexray/rules/` ve test katmanlarında uygulanmalıdır.
 
 Eğer mevcut abstractions bunun için yetersiz görünürse, core engine'e doğrudan özel-case eklemek yerine önce yeni bir mimari karar kayda geçirilmelidir.
 

@@ -31,7 +31,7 @@ reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
 ## Neden bu proje
 
 Amaç terimleri ezberlemek değil, tespit eden bir sistem kurmak. Mimari
-bilerek modüler: yeni bir zafiyet kategorisi eklemek `rules/` altına
+bilerek modüler: yeni bir zafiyet kategorisi eklemek `codexray/rules/` altına
 yeni bir dosya eklemek demek, çekirdek motora (`src/codexray/`)
 dokunmadan.
 

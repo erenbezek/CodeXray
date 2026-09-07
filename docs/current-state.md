@@ -161,7 +161,7 @@ Contains:
 - Sink checking
 - Taint path generation
 
-### `rules/`
+### `src/codexray/rules/`
 
 Contains vulnerability-specific rules.
 

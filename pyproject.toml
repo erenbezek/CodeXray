@@ -12,6 +12,6 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.pytest.ini_options]
-# src/ (codexray paketi) ve repo kökü (rules/ paketi) otomatik path'e
-# eklenir -- "git clone && pytest" pip install gerektirmeden çalışsın diye.
-pythonpath = ["src", "."]
+# src/ (codexray paketi) otomatik path'e eklenir -- "git clone && pytest"
+# pip install gerektirmeden çalışsın diye.
+pythonpath = ["src"]

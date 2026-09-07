@@ -4,7 +4,7 @@ import pytest
 
 from codexray.rule_model import RuleEngine
 from codexray.taint_engine import TaintAnalyzer
-from rules.sql_injection import SQL_INJECTION_RULE
+from codexray.rules.sql_injection import SQL_INJECTION_RULE
 
 
 def _analyze(code: str) -> TaintAnalyzer:

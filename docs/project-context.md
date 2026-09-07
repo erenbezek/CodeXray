@@ -45,7 +45,7 @@ bırakıldı — kapsamı bir program analiz framework'üne büyütmemek için.
    bir katman. Tespit motoru değil, sadece triage.
 
 Kural/traversal ayrımı mimarinin en önemli kararı: `taint_engine.py`
-hiçbir kurala özgü mantık içermez, her şey `rules/` altındaki `Rule`
+hiçbir kurala özgü mantık içermez, her şey `codexray/rules/` altındaki `Rule`
 tanımlarından gelir. Yeni kategori eklemek çekirdeğe dokunmadan
 yapılabilir.
 
