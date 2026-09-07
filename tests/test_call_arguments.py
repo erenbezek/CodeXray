@@ -9,10 +9,12 @@ import pytest
 from codexray.call_arguments import (
     ArgumentSelector,
     CallArgumentBinder,
+    RestSelector,
     as_selector,
     keyword,
     parameter,
     positional,
+    rest,
 )
 from codexray.call_model import CallModel, CallModelRegistry
 from codexray.rule_model import (
@@ -174,6 +176,42 @@ def test_bind_all_drops_unresolved_selectors():
 
     bound = binder.bind_all((parameter(0), parameter(name="value"), keyword("missing")))
     assert [node.id for node in bound] == ["a", "b"]
+
+
+def test_rest_selector_is_a_distinct_type():
+    assert rest() == RestSelector(from_index=0)
+
+
+def test_bind_rejects_rest_selector_because_it_names_many_parameters():
+    binder = CallArgumentBinder(_call("f(a, b)"))
+
+    with pytest.raises(TypeError, match="use bind_all"):
+        binder.bind(rest())
+
+
+def test_bind_all_rest_selector_binds_all_visible_arguments_and_keywords():
+    binder = CallArgumentBinder(_call("f(a, b, key=c, **mapping)"))
+
+    bound = binder.bind_all((rest(),))
+
+    assert [node.id for node in bound] == ["a", "b", "c", "mapping"]
+
+
+def test_rest_selector_binds_starred_node_at_or_after_start():
+    binder = CallArgumentBinder(_call("f(*parts, a, key=b)"))
+
+    bound = binder.bind_all((rest(),))
+
+    assert [type(node).__name__ for node in bound] == ["Starred", "Name", "Name"]
+    assert bound[0].value.id == "parts"
+
+
+def test_rest_selector_refuses_positionals_after_prior_starred_node():
+    binder = CallArgumentBinder(_call("f(a, *parts, b, key=c)"))
+
+    bound = binder.bind_all((rest(2),))
+
+    assert [node.id for node in bound] == ["c"]
 
 
 # ---- sink ----

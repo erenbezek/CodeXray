@@ -18,8 +18,8 @@
 | Adım | Ne | Durum |
 |---|---|---|
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
-| M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | M5.9'dan sonra |
-| M6 | Path Manipulation | M5.10'dan sonra |
+| M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
+| M6 | Path Manipulation | sırada |
 | — | Literal receiver / shape-based matching | ertelendi |
 
 Ölçümler (güncel). Sıra bu tablonun M5.9 öncesi halinden türetildi; o zaman
@@ -31,9 +31,9 @@
 | `with open(kirli) as f:` | 0 bulgu — header slotu çalışıyor, `open` henüz sink değil (M6) |
 | `for row in cursor.execute(q):` | 1 bulgu |
 | `if` / `while cursor.execute(q):` | 1 bulgu |
-| `os.path.join("/base", kirli)` | 0 bulgu |
-| `os.path.join(kirli, 'a', 'b')` | 0 bulgu |
-| `tpl.format('s', kirli)` | 0 bulgu |
+| `os.path.join("/base", kirli)` | 1 bulgu |
+| `os.path.join(kirli, 'a', 'b')` | 1 bulgu |
+| `tpl.format('s', kirli)` | 1 bulgu |
 | `sep.join([kirli])` | 0 bulgu — konteyner semantiği, M5.10 kapsamı dışı |
 | `"SELECT {}".format(kirli)` | 0 bulgu — literal receiver, M5.10 kapsamı dışı |
 | `return Response(kirli)` | 1 bulgu |
@@ -73,6 +73,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - `BoolOp` (`a or b`) ve `IfExp` (ternary) propagation
 - Statement header slotları: `if`/`while` test, `for`/`async for` iter, `with`/`async with` context
 - `Await` expression propagation
+- `RestSelector` ile variadic CallModel argüman propagation (`os.path.join`, `format`)
 - Receiver analizi (`Response(v).upper()` içindeki sink görünür)
 - Receiver propagation (`v.upper()`, `request.args.get('q')`, metot zincirleri)
 - Her çağrı argümanı ve receiver'ı **tam olarak bir kez** analiz edilir
@@ -82,7 +83,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-171 passed
+192 passed
 
 ## Current SQL Injection Flow
 

@@ -11,7 +11,7 @@ import ast
 from dataclasses import dataclass
 from typing import Iterable, Literal
 
-from .call_arguments import ArgumentSelectorLike, parameter
+from .call_arguments import ArgumentSelectorLike, parameter, rest
 from .rule_model import CallTarget, matches_target, resolve_qualified_name
 
 
@@ -79,6 +79,19 @@ class CallModelRegistry:
 
 
 DEFAULT_CALL_MODELS: tuple[CallModel, ...] = (
+    CallModel(
+        target=CallTarget(qualified_name="os.path.join"),
+        input_selectors=(rest(0),),
+        preserves_taint=True,
+        preserves_sanitization=False,
+    ),
+    CallModel(
+        target=CallTarget(qualified_name="format"),
+        input_selectors=(rest(0),),
+        receiver_is_input=True,
+        preserves_taint=True,
+        preserves_sanitization=False,
+    ),
     CallModel(
         target=CallTarget(qualified_name="str"),
         input_selectors=(0,),

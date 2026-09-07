@@ -23,10 +23,10 @@ M5.8 Receiver analizi + propagation      <-- TAMAMLANDI
 M5.9 Statement header slotlari           <-- TAMAMLANDI
      |   (if / while test, for iter, with context)
      |
-M5.10 Variadic argument model            <-- next
+M5.10 Variadic argument model            <-- TAMAMLANDI
      |   (os.path.join, tpl.format - keyfi sayida arguman)
      |
-M6  Path Manipulation
+M6  Path Manipulation                    <-- next
      |
 M7  Sensitive Data Exposure
      |
