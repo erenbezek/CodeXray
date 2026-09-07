@@ -24,7 +24,7 @@ M5.9 Statement header slotlari           <-- next
      |   (if / while test, for iter, with context)
      |
 M5.10 Variadic argument model
-     |   (os.path.join, sep.join, tpl.format)
+     |   (os.path.join, tpl.format - keyfi sayida arguman)
      |
 M6  Path Manipulation
      |
@@ -93,8 +93,15 @@ Aynı kapı, aynı gerekçe. İkisi de ölçülerek seçildi:
   koşulu. Aynı körlük SQL tarafını da etkiliyor: `for row in
   cursor.execute(q):` de 0 bulgu.
 - **Variadic argument model (M5.10):** `os.path.join("/base", kirli)` 0 bulgu.
-  Path Manipulation'ın kanonik kompozisyon kalıbı; aynı abstraction
-  `sep.join(parts)` ve `tpl.format(x)` üzerinden bir SQLi kalıbını da kapatıyor.
+  Path Manipulation'ın kanonik kompozisyon kalıbı. Kazanç, keyfi sayıda
+  argüman üzerinde **pozisyondan bağımsız** taint: `os.path.join(kirli, "a", "b")`
+  da `os.path.join("/b", kirli)` da tek bir tanımla kapanır. Aynı abstraction
+  `tpl.format("s", kirli)` üzerinden bir SQLi kalıbını da kapatıyor.
+
+`join` bu listede **değil**. Ölçüldü: `join` tam olarak tek argüman alır (bir
+iterable), dolayısıyla boşluğu variadic arity değil konteyner-vs-eleman
+semantiğidir. `sep.join(kirli_string)` düz bir `CallModel` ile kapanır;
+`sep.join([kirli])` ve `sep.join(parts)` variadic ile de kapanmaz.
 
 `"SELECT {}".format(kirli)` bu ikisinin dışında kalıyor: literal receiver'ın
 nitelikli adı olmadığı için (`resolve_qualified_name` → `None`) hiçbir modele

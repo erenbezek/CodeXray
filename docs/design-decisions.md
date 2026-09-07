@@ -811,9 +811,16 @@ koruyor; kapsamı çıplak `return tainted`.
 Aday olarak duran "format / join" tek bir iş değil, iki ayrı karar:
 
 1. **Variadic argument model (M5.10).** Bir selector'ın "kalan tüm
-   argümanları" adlandırabilmesi. `os.path.join("/base", kirli)`,
-   `sep.join(parts)` ve `tpl.format(x)` bugün 0 bulgu üretiyor; üçü de bununla
-   kapanır.
+   argümanları" adlandırabilmesi. Kazanç keyfi sayıda argüman üzerinde
+   pozisyondan bağımsız taint: `os.path.join("/base", kirli)`,
+   `os.path.join(kirli, "a", "b")` ve `tpl.format("s", kirli)` bugün 0 bulgu
+   üretiyor, üçü de tek bir tanımla kapanır.
+
+   `join` bu kapsamda **değil** — ilk sınıflandırmam yanlıştı, ölçümle
+   düzeltildi. `join` tam olarak tek argüman alır (bir iterable), dolayısıyla
+   boşluğu variadic arity değil konteyner-vs-eleman semantiğidir:
+   `sep.join(kirli_string)` düz bir `CallModel` ile kapanır, `sep.join([kirli])`
+   ve `sep.join(parts)` variadic ile de kapanmaz. Konteyner ertelemesine ait.
 2. **Literal receiver eşleştirme (ertelendi).** `"SELECT {}".format(kirli)`
    bununla kapanmaz. `resolve_qualified_name` literal receiver için `None`
    döner, dolayısıyla çağrı hiçbir modele ya da kurala *ulaşmaz*. Kapatmak
@@ -834,13 +841,47 @@ M6 bugün yazılsaydı amiral kalıbını kaçıran bir kural olarak yayınlanı
 
 Sıra: **M5.9 → M5.10 → M6.**
 
-### M5.10 için uygulamadan önce karara bağlanacak konu
+### M5.10 ve `*args`: ikilem geçersizdi
 
-"Kalan tüm argümanlar" selector'ının `*args` varlığındaki davranışı açık bir
-karar gerektirir. Mevcut politika pozisyonel selector'ları bir `*args`'tan
-sonra hiç bağlamıyor; variadic bir selector için aynı muhafazakârlığın ne
-anlama geldiği (hiç bağlanmama mı, yalnızca görünen argümanların bağlanması
-mı) henüz belirlenmemiştir. Bu karar alınmadan M5.10 uygulanmayacak.
+"Variadic selector `*args` varken ne yapmalı" sorusu yanlış kurulmuş bir
+ikilemdi. Mevcut pozisyonel kısıtlamanın gerekçesi **indeks hassasiyeti**:
+`f(*rest, x)` çağrısında 1. pozisyonun hangi ifadeye denk geldiği bilinemez.
+"N'den itibaren kalan tüm parametreler" ise indeks hassasiyetine dayanmaz —
+unpacking olsa da olmasa da iyi tanımlı bir *görünür ifade kümesi*.
+
+Karar: variadic selector, N'den itibaren **görünen tüm argüman ifadelerini**
+bağlar; `Starred` düğümünün kendisi de görünür bir ifadedir ve ne katkı
+vereceğine `_analyze_Starred` karar verir. Bugün `CLEAN` dönüyor — konteyner
+ertelemesiyle tutarlı — ve konteyner semantiği tasarlandığında bu kendiliğinden
+iyileşir. Yalnızca bir `Starred` selector'ın indeksinden *önce* duruyorsa
+indeks hassasiyeti gerçekten kaybolur; o durumda selector hiçbir şey bağlamaz.
+
+Yeni bir politika icat edilmiyor; mevcut parçalar besteleniyor. Prototiple
+ölçüldü:
+
+    os.path.join("/base", kirli)      -> 1 bulgu
+    os.path.join(kirli, "a", "b")     -> 1 bulgu
+    os.path.join("/base", "/c")       -> 0 bulgu
+    os.path.join("/base", *parts)     -> 0 bulgu
+
+Son satır dokümante edilmiş konteyner ertelemesiyle **aynı** false negative,
+yeni bir kayıp değil.
+
+### M5.10 için açık kalan tek soru: keyword argümanlar
+
+`*args` çözülünce yerine gerçek soru çıktı: variadic selector adlandırılmış
+keyword argümanları da kapsıyor mu? Ölçüldü:
+
+    tpl.format(kirli)          -> pozisyonel: 1    pozisyonel+keyword: 1
+    tpl.format(n=kirli)        -> pozisyonel: 0    pozisyonel+keyword: 1
+    tpl.format("s", n=kirli)   -> pozisyonel: 0    pozisyonel+keyword: 1
+    tpl.format(n="s")          -> pozisyonel: 0    pozisyonel+keyword: 0
+    tpl.format(**d)            -> pozisyonel: 0    pozisyonel+keyword: 0
+
+`"{name}".format(name=kirli)` gerçek kodda yaygın. Adlandırılmış keyword'ü
+bağlamak bir varsayım değil kesin bir çözümleme; `**mapping` unpacking ise
+`Starred` ile aynı şekilde ele alınır. Bu karar alınmadan M5.10
+uygulanmayacak.
 
 ### Süreç notu
 
