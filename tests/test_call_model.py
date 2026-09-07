@@ -12,6 +12,7 @@ from codexray.rule_model import (
     SourcePattern,
 )
 from codexray.taint_engine import TaintAnalyzer
+from rules.xss import XSS_RULE
 
 
 def _rule() -> Rule:
@@ -50,6 +51,12 @@ def _analyze(
     analyzer = TaintAnalyzer(
         RuleEngine([_rule()]), call_model_registry=call_model_registry
     )
+    analyzer.visit(ast.parse(code))
+    return analyzer
+
+
+def _analyze_xss(code: str) -> TaintAnalyzer:
+    analyzer = TaintAnalyzer(RuleEngine([XSS_RULE]))
     analyzer.visit(ast.parse(code))
     return analyzer
 
@@ -231,6 +238,79 @@ def test_literal_receiver_cannot_be_matched():
     )
 
     assert not analyzer.env["result"].tainted
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_findings"),
+    [
+        ("os.path.join('/b', value)", 1),
+        ("os.path.join(value, 'a', 'b')", 1),
+        ("os.path.join('/b', '/c')", 0),
+        ("os.path.join('/b', *parts)", 0),
+        ("os.path.join(*parts, 'a')", 0),
+        ("template.format(value)", 1),
+        ("template.format('s', value)", 1),
+        ("template.format(n=value)", 1),
+        ("template.format('s', n=value)", 1),
+        ("template.format(n='s')", 0),
+        ("template.format(**{'n': value})", 0),
+        ("template.format(**value)", 1),
+        ("value.format('s')", 1),
+        ("'SELECT {}'.format(value)", 0),
+    ],
+    ids=(
+        "join-clean-first-tainted-second",
+        "join-tainted-first",
+        "join-all-clean",
+        "join-starred-container",
+        "join-starred-container-first",
+        "format-positional",
+        "format-tainted-second",
+        "format-keyword",
+        "format-positional-and-keyword",
+        "format-clean-keyword",
+        "format-dict-literal",
+        "format-tainted-mapping",
+        "format-tainted-receiver",
+        "format-literal-receiver",
+    ),
+)
+def test_variadic_models_match_acceptance_cases(
+    expression: str, expected_findings: int
+):
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "parts = [value]\n"
+        "template = 'clean'\n"
+        f"result = {expression}\n"
+        "sink(result)\n"
+    )
+
+    assert len(analyzer.findings) == expected_findings
+
+
+def test_format_resets_sanitization_before_xss_sink():
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        "safe = sanitize(value)\n"
+        "template = 'clean'\n"
+        "result = template.format(safe)\n"
+        "sink(result)\n"
+    )
+
+    assert analyzer.env["safe"].sanitized_for == ("html",)
+    assert analyzer.env["result"].sanitized_for == ()
+    assert len(analyzer.findings) == 1
+
+
+def test_format_tainted_request_json_mapping_reaches_response_sink():
+    analyzer = _analyze_xss(
+        "template = 'clean'\n"
+        "result = template.format(**request.json)\n"
+        "Response(result)\n"
+    )
+
+    assert len(analyzer.findings) == 1
 
 
 def test_predicate_method_remains_non_propagating():

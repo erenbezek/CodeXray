@@ -43,6 +43,18 @@ class ArgumentSelector:
             raise ValueError("an ArgumentSelector needs an index, a name, or both")
 
 
+@dataclass(frozen=True)
+class RestSelector:
+    """Names every visible parameter from ``from_index`` onward."""
+
+    from_index: int = 0
+
+
+def rest(from_index: int = 0) -> RestSelector:
+    """All visible parameters from ``from_index`` onward."""
+    return RestSelector(from_index=from_index)
+
+
 def parameter(index: int | None = None, name: str | None = None) -> ArgumentSelector:
     """One parameter, addressable positionally, by keyword, or both."""
     return ArgumentSelector(index=index, name=name)
@@ -59,10 +71,10 @@ def keyword(name: str) -> ArgumentSelector:
 
 
 #: Rules and models may keep writing plain ints (``dangerous_arguments=(0,)``).
-ArgumentSelectorLike = int | ArgumentSelector
+ArgumentSelectorLike = int | ArgumentSelector | RestSelector
 
 
-def as_selector(value: ArgumentSelectorLike) -> ArgumentSelector:
+def as_selector(value: int | ArgumentSelector) -> ArgumentSelector:
     """Normalise the backward-compatible int shorthand: ``0`` -> ``positional(0)``."""
     if isinstance(value, ArgumentSelector):
         return value
@@ -88,6 +100,9 @@ class CallArgumentBinder:
         other is not consulted.  Never merges: one parameter, one expression.
         If invalid code supplies both, the positional spelling wins.
         """
+        if isinstance(selector, RestSelector):
+            raise TypeError("bind() accepts one parameter; use bind_all() for rest()")
+
         resolved = as_selector(selector)
 
         if resolved.index is not None:
@@ -102,8 +117,27 @@ class CallArgumentBinder:
         self, selectors: Iterable[ArgumentSelectorLike]
     ) -> tuple[ast.expr, ...]:
         """Bind every selector, silently dropping the ones that do not resolve."""
-        bound = [self.bind(selector) for selector in selectors]
-        return tuple(expr for expr in bound if expr is not None)
+        bound: list[ast.expr] = []
+        for selector in selectors:
+            if isinstance(selector, RestSelector):
+                bound.extend(self._bind_rest(selector.from_index))
+                continue
+            expression = self.bind(selector)
+            if expression is not None:
+                bound.append(expression)
+        return tuple(bound)
+
+    def _bind_rest(self, from_index: int) -> tuple[ast.expr, ...]:
+        """Bind visible positional and every keyword expression from a rest slot."""
+        first_starred_before_start = any(
+            isinstance(argument, ast.Starred)
+            for argument in self.node.args[:from_index]
+        )
+        positional = () if first_starred_before_start else tuple(
+            self.node.args[from_index:]
+        )
+        keyword_values = tuple(keyword.value for keyword in self.node.keywords)
+        return positional + keyword_values
 
     def _bind_positional(self, index: int | None) -> ast.expr | None:
         if index is None or not 0 <= index < len(self.node.args):

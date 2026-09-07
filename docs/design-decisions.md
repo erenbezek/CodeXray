@@ -929,6 +929,19 @@ Böyle bir hedef çıkarsa çözüm bir bayrak eklemek değil, **pattern'i /
 modeli bölmektir** — yukarıdaki `requires_sanitization_for` emsali. Bu kaçış
 yolu, ileride okuyanın knob aramasını önlemek için şimdiden yazılmıştır.
 
+### Uygulama notu
+
+`rest()` ayrı bir `RestSelector` tipi olarak eklendi; tek parametre sözleşmesini
+korumak için `bind()` bu selector'da `TypeError` yükseltir, çoklu bağlama yalnızca
+`bind_all()` üzerinden yapılır. `RestSelector`, `from_index` sonrasındaki görünür
+pozisyonel ifadeleri ve tüm keyword değerlerini bağlar; önceki `Starred` nedeniyle
+belirsizleşen pozisyoneller korunarak bağlanmaz.
+
+Uygulama `taint_engine.py` değişmeden çalışır: mevcut argüman state cache'i
+`RestSelector`'ın bağladığı `Starred` ve keyword değerlerini zaten hazırlar.
+Yeni varsayılan modeller yalnızca `os.path.join` ve receiver'ı input olan
+`format` için eklendi; sanitization varsayılan olarak sıfırlanır.
+
 ### Süreç notu
 
 M5.6'nın gerekçesi uygulama sonrası yeniden ölçülmediği için bayatladı. Bir
