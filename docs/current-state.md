@@ -17,18 +17,20 @@
 
 | Adım | Ne | Durum |
 |---|---|---|
-| M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | sırada |
+| M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | M5.9'dan sonra |
 | M6 | Path Manipulation | M5.10'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
 
-Sırayı belirleyen ölçümler:
+Ölçümler (güncel). Sıra bu tablonun M5.9 öncesi halinden türetildi; o zaman
+`for` / `if` / `while` satırları da 0 bulguydu.
 
 | Kalıp | Bugün |
 |---|---|
-| `with open(kirli) as f:` | 0 bulgu |
-| `for row in cursor.execute(q):` | 0 bulgu |
-| `if` / `while cursor.execute(q):` | 0 bulgu |
+| `with Response(kirli):` (header slotu) | 1 bulgu |
+| `with open(kirli) as f:` | 0 bulgu — header slotu çalışıyor, `open` henüz sink değil (M6) |
+| `for row in cursor.execute(q):` | 1 bulgu |
+| `if` / `while cursor.execute(q):` | 1 bulgu |
 | `os.path.join("/base", kirli)` | 0 bulgu |
 | `os.path.join(kirli, 'a', 'b')` | 0 bulgu |
 | `tpl.format('s', kirli)` | 0 bulgu |
@@ -69,6 +71,8 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - Statement kapsamı: `return`, `AugAssign`, `AnnAssign`, `raise`, `assert`
 - Comprehension ve konteyner literali alt ifadelerinin sink için analizi
 - `BoolOp` (`a or b`) ve `IfExp` (ternary) propagation
+- Statement header slotları: `if`/`while` test, `for`/`async for` iter, `with`/`async with` context
+- `Await` expression propagation
 - Receiver analizi (`Response(v).upper()` içindeki sink görünür)
 - Receiver propagation (`v.upper()`, `request.args.get('q')`, metot zincirleri)
 - Her çağrı argümanı ve receiver'ı **tam olarak bir kez** analiz edilir
@@ -78,7 +82,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-153 passed
+171 passed
 
 ## Current SQL Injection Flow
 
@@ -226,12 +230,8 @@ Bilinçli olarak açık bırakılan slotlar:
 ```text
 UnaryOp (-x, not x)      Subscript slice (d[kirli:])
 Lambda gövdesi           NamedExpr / walrus (x := kirli)
-Await (await kirli)      str.format()             str.join()
+str.format()             str.join()
 ```
-
-`Await` ölçüldü: `x = await Response(kirli)` -> 0 bulgu. Semantiği tartışmasız
-(bir coroutine'i beklemek sonucunu verir), bu yüzden M5.9 ile birlikte
-kapatılacak — bir header slotu değil ama async kapsamı aynı pakette açılıyor.
 
 Ayrıca:
 
@@ -242,23 +242,6 @@ Ayrıca:
   semantiği tasarlanana kadar görünür bir tutarsızlık.
 - **`*args` sink tarafında false negative.** `Response(*args)` bulgu üretmez.
   Propagation için muhafazakâr, sink için müsamahakâr olan bilinçli bir seçim.
-
-### Statement header slotları (ayrı kök neden)
-
-`if` / `while` test'i, `for` iter'i ve `with` context'i yukarıdaki listede
-değil, çünkü eksik olan bir *expression handler* değil bir *statement
-visitor*. `generic_visit()` bu düğümlerin çocuklarını geziyor ama başlık
-ifadesini hiç `analyze_expression()`'a vermiyor; sonuç taint kaybı değil,
-doğrudan **bulgu kaybı** — başlıkta duran sink hiç görülmüyor:
-
-```text
-with open(kirli) as f:          -> 0 bulgu
-for row in cursor.execute(q):   -> 0 bulgu
-```
-
-Gövdeler etkilenmiyor (`if True: cursor.execute(q)` -> 1 bulgu). Görünür
-asimetri: ternary'nin (`IfExp`) test'i M5.7'de analiz ediliyor, `if`
-statement'ının test'i edilmiyor. M5.9 bunu kapatacak.
 
 ### No control-flow analysis
 

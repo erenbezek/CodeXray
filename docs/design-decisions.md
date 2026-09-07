@@ -934,3 +934,28 @@ yolu, ileride okuyanın knob aramasını önlemek için şimdiden yazılmıştı
 M5.6'nın gerekçesi uygulama sonrası yeniden ölçülmediği için bayatladı. Bir
 sıralama gerekçesi olarak sunulan örnek, sunulmadan önce koda karşı
 ölçülmelidir.
+
+## M5.9 — Statement header slotları
+
+### Kök neden
+
+`if` / `while` test'i, `for` / `async for` iter'i ve `with` / `async with`
+context'i eksik bir expression handler nedeniyle değil, bu düğümlerin
+statement visitor'ları başlık slotlarını `analyze_expression()`'a vermediği
+için analiz edilmiyordu. Sonuç taint kaybı değil, başlıkta bulunan sink için
+doğrudan bulgu kaybıydı.
+
+### Karar
+
+Her statement visitor başlık ifadesini analiz eder ve dönen state'i bağlamadan
+atar; ardından `generic_visit(node)` çağırarak gövde traversal'ını korur.
+`with` düğümlerinde listedeki her `context_expr` analiz edilir. `Await` ayrı
+bir expression handler olarak değerinin state'ini döndürür; bu, statement
+header slotlarından bağımsız bir kök nedendir.
+
+`generic_visit()` başlık ifadesini tekrar `analyze_expression()`'a indirmez;
+AST çocuklarını dolaşması inert olduğu için başlık sink'leri çift raporlanmaz.
+
+`for` target ve `with ... as` optional target bağlanmaz. Konteynerden elemana
+ve context sonucundan hedefe taint türetme semantiği ertelenmiştir; bu davranış
+bilinçli olarak testlerle korunur.
