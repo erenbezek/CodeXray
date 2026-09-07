@@ -18,7 +18,7 @@
 | Adım | Ne | Durum |
 |---|---|---|
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | sırada |
-| M5.10 | Variadic argument model (`os.path.join`, `sep.join`, `tpl.format`) | M5.9'dan sonra |
+| M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | M5.9'dan sonra |
 | M6 | Path Manipulation | M5.10'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
 
@@ -30,7 +30,9 @@ Sırayı belirleyen ölçümler:
 | `for row in cursor.execute(q):` | 0 bulgu |
 | `if` / `while cursor.execute(q):` | 0 bulgu |
 | `os.path.join("/base", kirli)` | 0 bulgu |
-| `sep.join([kirli])` / `tpl.format(kirli)` | 0 bulgu |
+| `os.path.join(kirli, 'a', 'b')` | 0 bulgu |
+| `tpl.format('s', kirli)` | 0 bulgu |
+| `sep.join([kirli])` | 0 bulgu — konteyner semantiği, M5.10 kapsamı dışı |
 | `"SELECT {}".format(kirli)` | 0 bulgu — literal receiver, M5.10 kapsamı dışı |
 | `return Response(kirli)` | 1 bulgu |
 | `return kirli` (çıplak) | 0 bulgu — return sink abstraction hâlâ yok |
@@ -38,8 +40,10 @@ Sırayı belirleyen ölçümler:
 
 Gerekçeler için `docs/roadmap.md` → "M5.9 / M5.10 neden M6'dan önce".
 
-**Açık karar:** M5.10'daki "kalan tüm argümanlar" selector'ının `*args`
-varlığında nasıl davranacağı, uygulamadan önce karara bağlanacak.
+M5.10'un `rest()` selector'ı karara bağlandı: `*args` ve `**mapping` görünen
+birer ifadedir ve katkılarına mevcut handler'lar karar verir; adlandırılmış
+keyword argümanlar kapsam içindedir (parameter modeliyle tutarlılık). Gerekçe
+ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Working
 
@@ -222,8 +226,12 @@ Bilinçli olarak açık bırakılan slotlar:
 ```text
 UnaryOp (-x, not x)      Subscript slice (d[kirli:])
 Lambda gövdesi           NamedExpr / walrus (x := kirli)
-str.format()             str.join()
+Await (await kirli)      str.format()             str.join()
 ```
+
+`Await` ölçüldü: `x = await Response(kirli)` -> 0 bulgu. Semantiği tartışmasız
+(bir coroutine'i beklemek sonucunu verir), bu yüzden M5.9 ile birlikte
+kapatılacak — bir header slotu değil ama async kapsamı aynı pakette açılıyor.
 
 Ayrıca:
 

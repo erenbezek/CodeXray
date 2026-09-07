@@ -811,9 +811,16 @@ koruyor; kapsamı çıplak `return tainted`.
 Aday olarak duran "format / join" tek bir iş değil, iki ayrı karar:
 
 1. **Variadic argument model (M5.10).** Bir selector'ın "kalan tüm
-   argümanları" adlandırabilmesi. `os.path.join("/base", kirli)`,
-   `sep.join(parts)` ve `tpl.format(x)` bugün 0 bulgu üretiyor; üçü de bununla
-   kapanır.
+   argümanları" adlandırabilmesi. Kazanç keyfi sayıda argüman üzerinde
+   pozisyondan bağımsız taint: `os.path.join("/base", kirli)`,
+   `os.path.join(kirli, "a", "b")` ve `tpl.format("s", kirli)` bugün 0 bulgu
+   üretiyor, üçü de tek bir tanımla kapanır.
+
+   `join` bu kapsamda **değil** — ilk sınıflandırmam yanlıştı, ölçümle
+   düzeltildi. `join` tam olarak tek argüman alır (bir iterable), dolayısıyla
+   boşluğu variadic arity değil konteyner-vs-eleman semantiğidir:
+   `sep.join(kirli_string)` düz bir `CallModel` ile kapanır, `sep.join([kirli])`
+   ve `sep.join(parts)` variadic ile de kapanmaz. Konteyner ertelemesine ait.
 2. **Literal receiver eşleştirme (ertelendi).** `"SELECT {}".format(kirli)`
    bununla kapanmaz. `resolve_qualified_name` literal receiver için `None`
    döner, dolayısıyla çağrı hiçbir modele ya da kurala *ulaşmaz*. Kapatmak
@@ -834,13 +841,93 @@ M6 bugün yazılsaydı amiral kalıbını kaçıran bir kural olarak yayınlanı
 
 Sıra: **M5.9 → M5.10 → M6.**
 
-### M5.10 için uygulamadan önce karara bağlanacak konu
+### M5.10 ve `*args`: ikilem geçersizdi
 
-"Kalan tüm argümanlar" selector'ının `*args` varlığındaki davranışı açık bir
-karar gerektirir. Mevcut politika pozisyonel selector'ları bir `*args`'tan
-sonra hiç bağlamıyor; variadic bir selector için aynı muhafazakârlığın ne
-anlama geldiği (hiç bağlanmama mı, yalnızca görünen argümanların bağlanması
-mı) henüz belirlenmemiştir. Bu karar alınmadan M5.10 uygulanmayacak.
+"Variadic selector `*args` varken ne yapmalı" sorusu yanlış kurulmuş bir
+ikilemdi. Mevcut pozisyonel kısıtlamanın gerekçesi **indeks hassasiyeti**:
+`f(*rest, x)` çağrısında 1. pozisyonun hangi ifadeye denk geldiği bilinemez.
+"N'den itibaren kalan tüm parametreler" ise indeks hassasiyetine dayanmaz —
+unpacking olsa da olmasa da iyi tanımlı bir *görünür ifade kümesi*.
+
+Karar: variadic selector, N'den itibaren **görünen tüm argüman ifadelerini**
+bağlar; `Starred` düğümünün kendisi de görünür bir ifadedir ve ne katkı
+vereceğine `_analyze_Starred` karar verir. Bugün `CLEAN` dönüyor — konteyner
+ertelemesiyle tutarlı — ve konteyner semantiği tasarlandığında bu kendiliğinden
+iyileşir. Yalnızca bir `Starred` selector'ın indeksinden *önce* duruyorsa
+indeks hassasiyeti gerçekten kaybolur; o durumda selector hiçbir şey bağlamaz.
+
+Yeni bir politika icat edilmiyor; mevcut parçalar besteleniyor. Prototiple
+ölçüldü:
+
+    os.path.join("/base", kirli)      -> 1 bulgu
+    os.path.join(kirli, "a", "b")     -> 1 bulgu
+    os.path.join("/base", "/c")       -> 0 bulgu
+    os.path.join("/base", *parts)     -> 0 bulgu
+
+Son satır dokümante edilmiş konteyner ertelemesiyle **aynı** false negative,
+yeni bir kayıp değil.
+
+### M5.10 karar: `rest()` adlandırılmış keyword argümanları kapsar
+
+Belirleyici gerekçe `format` kalıbı değil, **parameter modeli**.
+
+M5.5 kararı şunu kurdu: bir selector bir *parametreyi* adlandırır ve bir
+parametre pozisyonel, keyword veya her ikisiyle adreslenebilir. O karar tam
+olarak pozisyonel/keyword ayrımını ortadan kaldırmak için alındı. `rest()`
+"kalan tüm parametreler" demektir; keyword'le geçilen bir parametre hâlâ o
+parametredir. Pozisyonel-only bir `rest()` M5.5'in kaldırdığı ayrımı geri
+getirirdi ve "neden `rest()` tek başına pozisyonel düşünmeye dönüyor"
+sorusunun ayrı bir gerekçesi olması gerekirdi — yok. Mevcut mimariyle tutarlı
+tek seçenek.
+
+Model başına opt-in bayrak reddedildi: kapsamdaki iki hedef de aynı cevabı
+istiyor, dolayısıyla bayrağın ayırt edici bir vakası yok. Repoda emsal var —
+M3 review'unda sink'lerin farklı sanitizer bağlamları gerektiği ortaya
+çıkınca rule-wide bir knob eklenmedi, `requires_sanitization_for`
+`SinkPattern`'e taşındı; yani pattern bölündü. Spekülatif knob yerine pattern
+bölmek bu repoda kurulu desen.
+
+Ölçüldü:
+
+    tpl.format(kirli)          -> 1
+    tpl.format(n=kirli)        -> 1
+    tpl.format("s", n=kirli)   -> 1
+    tpl.format(n="s")          -> 0
+
+### `**mapping` bu kararın istisnası değil
+
+AST'de `**d` bir `keyword(arg=None)`'dır — ismi yoktur, içeriği bilinmez.
+Yani "adlandırılmış keyword" değil, `Starred` ile birebir simetriktir:
+
+    f(a, *rest, n=c)  ->  args=[Name, Starred]   keywords=[('n', Name)]
+    f(**d)            ->  args=[]                keywords=[(None, Name)]
+
+`rest()` ona `Starred` ile aynı muameleyi yapar: **değer ifadesini bağlar, ne
+olacağına handler karar verir.** Yeni politika icat edilmiyor.
+
+Sonucun "her zaman temiz" olmadığı ölçümle sabitlenmiştir — handler kirli
+mapping'i zaten biliyor:
+
+    tpl.format(**{"n": kirli})        -> 0   (dict literal -> _analyze_Dict CLEAN)
+    d = {"n": kirli}; tpl.format(**d) -> 0   (aynı, konteyner ertelemesi)
+    tpl.format(**request.get_json())  -> 1   (mapping'in kendisi tainted)
+    d = request.json; tpl.format(**d) -> 1
+    tpl.format(**temiz_dict)          -> 0
+
+İlk iki satır dokümante edilmiş konteyner ertelemesidir, `rest()`'in getirdiği
+yeni bir kayıp değil; konteyner semantiği tasarlandığında kendiliğinden
+iyileşir.
+
+### Kabul edilen risk ve kaçış yolu
+
+`rest()`, girdi olmayan bir konfigürasyon keyword parametresi bulunan bir
+hedefte o parametreyi de girdi sayar. Bugün kapsamda böyle bir hedef yok:
+`format`'ın keyword'leri gerçekten çıktıya besleniyor, `os.path.join`'in
+keyword parametresi yok.
+
+Böyle bir hedef çıkarsa çözüm bir bayrak eklemek değil, **pattern'i /
+modeli bölmektir** — yukarıdaki `requires_sanitization_for` emsali. Bu kaçış
+yolu, ileride okuyanın knob aramasını önlemek için şimdiden yazılmıştır.
 
 ### Süreç notu
 
