@@ -20,10 +20,10 @@ M5.6 Traversal statement kapsami         <-- TAMAMLANDI
 M5.7 BoolOp / IfExp propagation          <-- TAMAMLANDI
 M5.8 Receiver analizi + propagation      <-- TAMAMLANDI
      |
-M5.9 Statement header slotlari           <-- next
+M5.9 Statement header slotlari           <-- TAMAMLANDI
      |   (if / while test, for iter, with context)
      |
-M5.10 Variadic argument model
+M5.10 Variadic argument model            <-- next
      |   (os.path.join, tpl.format - keyfi sayida arguman)
      |
 M6  Path Manipulation

@@ -134,6 +134,32 @@ class TaintAnalyzer(ast.NodeVisitor):
         if node.msg is not None:
             self.analyze_expression(node.msg)
 
+    def visit_If(self, node: ast.If) -> None:
+        self.analyze_expression(node.test)
+        self.generic_visit(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self.analyze_expression(node.test)
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self.analyze_expression(node.iter)
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self.analyze_expression(node.iter)
+        self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            self.analyze_expression(item.context_expr)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        for item in node.items:
+            self.analyze_expression(item.context_expr)
+        self.generic_visit(node)
+
     def _extend_path(self, state: TaintState, name: str) -> TaintState:
         if not state.tainted:
             return state
@@ -198,6 +224,9 @@ class TaintAnalyzer(ast.NodeVisitor):
             self.analyze_expression(node.body),
             self.analyze_expression(node.orelse),
         )
+
+    def _analyze_Await(self, node: ast.Await) -> TaintState:
+        return self.analyze_expression(node.value)
 
     def _analyze_List(self, node: ast.List) -> TaintState:
         """Analyze elements for nested sinks without tainting the container."""

@@ -307,6 +307,99 @@ def test_ifexp_mixed_sanitization_is_not_preserved():
 @pytest.mark.parametrize(
     "statement",
     [
+        "if Response(v):\n    pass",
+        "while Response(v):\n    pass",
+        "for item in Response(v):\n    pass",
+        "with Response(v):\n    pass",
+        "async def f():\n    async for item in Response(v):\n        pass",
+        "async def f():\n    async with Response(v):\n        pass",
+    ],
+    ids=("if-test", "while-test", "for-iter", "with-context", "async-for-iter", "async-with-context"),
+)
+def test_statement_header_slots_detect_response_sink(statement: str):
+    analyzer = _analyze(f"v = request.args['q']\n{statement}\n")
+
+    assert len(analyzer.findings) == 1
+
+
+def test_generic_visit_does_not_reanalyze_statement_header_sink():
+    analyzer = _analyze("v = request.args['q']\nif Response(v):\n    pass\n")
+
+    assert len(analyzer.findings) == 1
+
+
+def test_clean_statement_header_slot_produces_no_finding():
+    analyzer = _analyze("v = 'sabit'\nif Response(v):\n    pass\n")
+
+    assert analyzer.findings == []
+
+
+def test_with_statement_analyzes_every_context_expression():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "with Response(v), Response(v):\n"
+        "    pass\n"
+    )
+
+    assert len(analyzer.findings) == 2
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "if Response(v):\n    Response(v)",
+        "for item in Response(v):\n    Response(v)",
+    ],
+    ids=("if-header-and-body", "for-header-and-body"),
+)
+def test_statement_header_and_body_sinks_are_both_reported(statement: str):
+    analyzer = _analyze(f"v = request.args['q']\n{statement}\n")
+
+    assert len(analyzer.findings) == 2
+
+
+def test_for_loop_target_is_not_bound_by_statement_header_analysis():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "for row in [v]:\n"
+        "    Response(row)\n"
+    )
+
+    assert "row" not in analyzer.env
+    assert analyzer.findings == []
+
+
+def test_with_as_target_is_not_bound_by_statement_header_analysis():
+    analyzer = _analyze(
+        "v = request.args['q']\n"
+        "with Response(v) as f:\n"
+        "    Response(f)\n"
+    )
+
+    assert "f" not in analyzer.env
+    assert len(analyzer.findings) == 1
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_findings"),
+    [
+        ("x = await Response(v)", 1),
+        ("x = await v\nResponse(x)", 1),
+        ("y = await f(v)\nResponse(y)", 0),
+    ],
+    ids=("await-sink", "await-propagates-taint", "await-unknown-call-stays-clean"),
+)
+def test_await_expression_analyzes_value(
+    statement: str, expected_findings: int
+):
+    analyzer = _analyze(f"v = request.args['q']\n{statement}\n")
+
+    assert len(analyzer.findings) == expected_findings
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
         "if c:\n    Response(v)",
         "for i in y:\n    Response(v)",
         "while c:\n    Response(v)",
@@ -317,6 +410,21 @@ def test_ifexp_mixed_sanitization_is_not_preserved():
     ids=("if", "for", "while", "try", "with", "function"),
 )
 def test_existing_body_statement_traversal_is_preserved(statement: str):
+    analyzer = _analyze(f"v = request.args['q']\n{statement}\n")
+
+    assert analyzer.env["v"].tainted
+    assert len(analyzer.findings) == 1
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "async def f():\n    async for item in y:\n        Response(v)",
+        "async def f():\n    async with c:\n        Response(v)",
+    ],
+    ids=("async-for", "async-with"),
+)
+def test_async_body_statement_traversal_is_preserved(statement: str):
     analyzer = _analyze(f"v = request.args['q']\n{statement}\n")
 
     assert analyzer.env["v"].tainted
