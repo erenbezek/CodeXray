@@ -22,11 +22,13 @@
 | M6 | Path Manipulation | M5.10'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
 
-Sırayı belirleyen ölçümler:
+Ölçümler (güncel). Sıra bu tablonun M5.9 öncesi halinden türetildi; o zaman
+`for` / `if` / `while` satırları da 0 bulguydu.
 
 | Kalıp | Bugün |
 |---|---|
-| `with open(kirli) as f:` | 0 bulgu |
+| `with Response(kirli):` (header slotu) | 1 bulgu |
+| `with open(kirli) as f:` | 0 bulgu — header slotu çalışıyor, `open` henüz sink değil (M6) |
 | `for row in cursor.execute(q):` | 1 bulgu |
 | `if` / `while cursor.execute(q):` | 1 bulgu |
 | `os.path.join("/base", kirli)` | 0 bulgu |
