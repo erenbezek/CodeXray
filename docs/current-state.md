@@ -40,8 +40,10 @@ Sırayı belirleyen ölçümler:
 
 Gerekçeler için `docs/roadmap.md` → "M5.9 / M5.10 neden M6'dan önce".
 
-**Açık karar:** M5.10'daki "kalan tüm argümanlar" selector'ının `*args`
-varlığında nasıl davranacağı, uygulamadan önce karara bağlanacak.
+M5.10'un `rest()` selector'ı karara bağlandı: `*args` ve `**mapping` görünen
+birer ifadedir ve katkılarına mevcut handler'lar karar verir; adlandırılmış
+keyword argümanlar kapsam içindedir (parameter modeliyle tutarlılık). Gerekçe
+ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Working
 

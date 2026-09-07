@@ -867,21 +867,67 @@ Yeni bir politika icat edilmiyor; mevcut parçalar besteleniyor. Prototiple
 Son satır dokümante edilmiş konteyner ertelemesiyle **aynı** false negative,
 yeni bir kayıp değil.
 
-### M5.10 için açık kalan tek soru: keyword argümanlar
+### M5.10 karar: `rest()` adlandırılmış keyword argümanları kapsar
 
-`*args` çözülünce yerine gerçek soru çıktı: variadic selector adlandırılmış
-keyword argümanları da kapsıyor mu? Ölçüldü:
+Belirleyici gerekçe `format` kalıbı değil, **parameter modeli**.
 
-    tpl.format(kirli)          -> pozisyonel: 1    pozisyonel+keyword: 1
-    tpl.format(n=kirli)        -> pozisyonel: 0    pozisyonel+keyword: 1
-    tpl.format("s", n=kirli)   -> pozisyonel: 0    pozisyonel+keyword: 1
-    tpl.format(n="s")          -> pozisyonel: 0    pozisyonel+keyword: 0
-    tpl.format(**d)            -> pozisyonel: 0    pozisyonel+keyword: 0
+M5.5 kararı şunu kurdu: bir selector bir *parametreyi* adlandırır ve bir
+parametre pozisyonel, keyword veya her ikisiyle adreslenebilir. O karar tam
+olarak pozisyonel/keyword ayrımını ortadan kaldırmak için alındı. `rest()`
+"kalan tüm parametreler" demektir; keyword'le geçilen bir parametre hâlâ o
+parametredir. Pozisyonel-only bir `rest()` M5.5'in kaldırdığı ayrımı geri
+getirirdi ve "neden `rest()` tek başına pozisyonel düşünmeye dönüyor"
+sorusunun ayrı bir gerekçesi olması gerekirdi — yok. Mevcut mimariyle tutarlı
+tek seçenek.
 
-`"{name}".format(name=kirli)` gerçek kodda yaygın. Adlandırılmış keyword'ü
-bağlamak bir varsayım değil kesin bir çözümleme; `**mapping` unpacking ise
-`Starred` ile aynı şekilde ele alınır. Bu karar alınmadan M5.10
-uygulanmayacak.
+Model başına opt-in bayrak reddedildi: kapsamdaki iki hedef de aynı cevabı
+istiyor, dolayısıyla bayrağın ayırt edici bir vakası yok. Repoda emsal var —
+M3 review'unda sink'lerin farklı sanitizer bağlamları gerektiği ortaya
+çıkınca rule-wide bir knob eklenmedi, `requires_sanitization_for`
+`SinkPattern`'e taşındı; yani pattern bölündü. Spekülatif knob yerine pattern
+bölmek bu repoda kurulu desen.
+
+Ölçüldü:
+
+    tpl.format(kirli)          -> 1
+    tpl.format(n=kirli)        -> 1
+    tpl.format("s", n=kirli)   -> 1
+    tpl.format(n="s")          -> 0
+
+### `**mapping` bu kararın istisnası değil
+
+AST'de `**d` bir `keyword(arg=None)`'dır — ismi yoktur, içeriği bilinmez.
+Yani "adlandırılmış keyword" değil, `Starred` ile birebir simetriktir:
+
+    f(a, *rest, n=c)  ->  args=[Name, Starred]   keywords=[('n', Name)]
+    f(**d)            ->  args=[]                keywords=[(None, Name)]
+
+`rest()` ona `Starred` ile aynı muameleyi yapar: **değer ifadesini bağlar, ne
+olacağına handler karar verir.** Yeni politika icat edilmiyor.
+
+Sonucun "her zaman temiz" olmadığı ölçümle sabitlenmiştir — handler kirli
+mapping'i zaten biliyor:
+
+    tpl.format(**{"n": kirli})        -> 0   (dict literal -> _analyze_Dict CLEAN)
+    d = {"n": kirli}; tpl.format(**d) -> 0   (aynı, konteyner ertelemesi)
+    tpl.format(**request.get_json())  -> 1   (mapping'in kendisi tainted)
+    d = request.json; tpl.format(**d) -> 1
+    tpl.format(**temiz_dict)          -> 0
+
+İlk iki satır dokümante edilmiş konteyner ertelemesidir, `rest()`'in getirdiği
+yeni bir kayıp değil; konteyner semantiği tasarlandığında kendiliğinden
+iyileşir.
+
+### Kabul edilen risk ve kaçış yolu
+
+`rest()`, girdi olmayan bir konfigürasyon keyword parametresi bulunan bir
+hedefte o parametreyi de girdi sayar. Bugün kapsamda böyle bir hedef yok:
+`format`'ın keyword'leri gerçekten çıktıya besleniyor, `os.path.join`'in
+keyword parametresi yok.
+
+Böyle bir hedef çıkarsa çözüm bir bayrak eklemek değil, **pattern'i /
+modeli bölmektir** — yukarıdaki `requires_sanitization_for` emsali. Bu kaçış
+yolu, ileride okuyanın knob aramasını önlemek için şimdiden yazılmıştır.
 
 ### Süreç notu
 
