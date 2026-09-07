@@ -19,8 +19,15 @@
 |---|---|---|
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
-| M6 | Path Manipulation | sırada |
+| CLI | Çalıştırılabilir tarayıcı | sırada |
+| M6 | Path Manipulation | CLI'dan sonra |
+| M7 | Sensitive Data Exposure | M6'dan sonra |
+| M11a | Triage denemesi (küçük ölçek) | M7'den sonra |
+| M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
+
+Sıranın gerekçesi ve kapının durma koşulu için `docs/roadmap.md` → "Dört
+strateji kararı".
 
 Ölçümler (güncel). Sıra bu tablonun M5.9 öncesi halinden türetildi; o zaman
 `for` / `if` / `while` satırları da 0 bulguydu.

@@ -26,9 +26,19 @@ M5.9 Statement header slotlari           <-- TAMAMLANDI
 M5.10 Variadic argument model            <-- TAMAMLANDI
      |   (os.path.join, tpl.format - keyfi sayida arguman)
      |
-M6  Path Manipulation                    <-- next
+CLI  Calistirilabilir tarayici           <-- next
+     |   (motorun ilk uctan uca kullanimi)
+     |
+M6  Path Manipulation
      |
 M7  Sensitive Data Exposure
+     |   (ilk farkli source ailesi -- genellenebilirligin asil sinavi)
+     |
+M11a Triage denemesi (kucuk olcek)
+     |   (kategori sayisindan bagimsiz, yukari cekildi)
+     |
+M8d Ikinci kural sekli tasarim karari
+     |   (ast-structural + presence-check mevcut Rule semasina sigmiyor)
      |
 M8  AST-structural kurallar
      |   (Empty Catch Block, Insecure Randomness, Hardcoded Password)
@@ -37,9 +47,9 @@ M9  Presence-check (CSRF)
      |
 M10 Bonus: dependency check (pip-audit / OSV.dev)
      |
-M11 Bonus: LLM triage katmani
+M11 Bonus: LLM triage katmani (tam)
      |
-M12 CI entegrasyonu (GitHub Actions)
+M12 CI entegrasyonu                      <-- .github/workflows/ci.yml ile TAMAMLANDI
 ```
 
 ## Neden bu sıra
@@ -81,6 +91,65 @@ gerekçe olarak `return Response(tainted)` → 0 bulgu ölçümünü gösteriyor
    boşluk çıplak `return tainted`: tainted bir dönüş değerini generic sink
    sayan abstraction hâlâ yok (ölçüldü: 0 bulgu) ve açık tasarım borcunda
    "Return sink abstraction yok" olarak duruyor.
+
+## Dört strateji kararı (M5.10 sonrası)
+
+İki koordinatör bağımsız olarak aynı dört boşluğu tespit etti. Karara
+bağlandılar ve sıra buna göre değişti.
+
+### 1. Kapının durma koşulu
+
+"Motor sağlam olmadan kategori eklenmez" kuralı M4'te doğruydu ama
+sonlandırılabilir değildi: `analyze_expression` bilinmeyen düğüme `CLEAN`
+döndüğü sürece her zaman bir sonraki boşluk bulunur. M5.1'den M5.10'a on
+alt-milestone, sıfır yeni kategori.
+
+**Eşik:** bir motor boşluğu, ancak bir kategorinin **amiral kalıbını**
+kaçırtıyorsa o kategoriyi bloklar.
+
+`with open(...)` M6'nın amiral kalıbıydı, M5.9'u haklı çıkardı.
+`os.path.join(...)` aynı şekilde M5.10'u. `UnaryOp`, walrus, lambda gövdesi,
+subscript slice ve literal receiver bu eşiği geçmez — kategorilerden sonra
+ele alınırlar.
+
+Reddedilen alternatif: "yeni kategori sıfır motor değişikliği gerektiriyorsa
+motor sağlamdır." Global bir test ve zaten sağlanıyor (M5.10 `taint_engine.py`
+değişmeden geçti), dolayısıyla tüm motor işini anında keserdi — fazla kör.
+
+### 2. CLI M6'dan önce
+
+Bugün CodeXray'i bir insan çalıştıramıyor: `TaintAnalyzer` ve `RuleEngine`
+elle kurulup `visit()` çağrılması gerekiyor. Roadmap'te M0–M12 vardı ve CLI
+hiçbirinde yoktu — "Not Implemented Yet" listesinin ilk satırıydı ama
+milestone'u yoktu.
+
+Motorun kalitesi, gösterilebilirliğinin çok önünde. CLI ayrıca motorun uçtan
+uca gerçekten çalıştığını ilk kez test edecek; şimdiye kadar yalnızca birim
+testleriyle doğrulandı.
+
+### 3. İkinci kural şekli — şimdi kayda geç, M7'den sonra tasarla
+
+`Rule` = `sources` + `sanitizers` + `sinks`, yani taint şekli. Empty Catch
+Block yapısal bir kontrol, CSRF bir yokluk kontrolü; ikisi de bu şemaya
+girmiyor.
+
+`architecture.md` üç motor tipini ve registry desenini zaten tanımlıyor,
+yani mimari niyet var. Eksik olan bir tasarım kararı ve bir milestone.
+
+M6 ve M7 taint kategorileri olduğu için bu boşluk onları **bloklamıyor**.
+Ama M8'de pusuya düşmemek için sıraya `M8d` olarak açıkça eklendi —
+M5.5'i haklı çıkaran argümanın aynısı, daha büyük ölçekte.
+
+### 4. Triage yukarı çekildi
+
+M11 listenin sonundaydı; zaman biterse ilk düşecek olan oydu. Triage katmanı
+kategori sayısından bağımsız çalışır — sekiz kategori beklemesine gerek yok.
+CLI ve M6'dan sonra küçük ölçekli bir deneme (`M11a`) eklendi; tam katman
+yerinde kaldı.
+
+### Yeni sıra
+
+    CLI -> M6 -> M7 -> M11a -> M8d -> M8 -> M9 -> M10 -> M11
 
 ## M5.9 / M5.10 neden M6'dan önce
 
