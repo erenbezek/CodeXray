@@ -948,6 +948,27 @@ M5.6'nın gerekçesi uygulama sonrası yeniden ölçülmediği için bayatladı.
 sıralama gerekçesi olarak sunulan örnek, sunulmadan önce koda karşı
 ölçülmelidir.
 
+## Süreç: dosya allowlist'i bir doküman regresyonu üretti
+
+M5.9 ve M5.10 brief'leri "tam olarak şu dosyalara dokunulur" biçiminde katı
+bir allowlist taşıyordu. Bu, kapsam kaymasını başarıyla önledi — iki pakette
+de tek bir yasak sınır aşılmadı.
+
+Ancak `architecture.md` iki allowlist'te de yoktu. Uygulayıcı doğru davranıp
+dokunmadı ve doküman kodla **çelişir** hale geldi:
+
+    "If, While, For, With, Try ve FunctionDef için özel visitor bulunmaz."
+
+M5.9 tam olarak o visitor'ları ekledi. `Await`, `rest()` / `RestSelector` ve
+variadic modeller de eksikti.
+
+Kök neden brief'i yazanda (koordinatör), uygulayanda değil. Allowlist bir
+kapsam aracıdır; hangi dokümanın etkilendiğini de aynı titizlikle
+belirlemek gerekir.
+
+**Kural:** traversal sözleşmesi, selector modeli veya çağrı semantiği
+değişiyorsa `architecture.md` allowlist'e girer. Değişmiyorsa girmez.
+
 ## M5.9 — Statement header slotları
 
 ### Kök neden
