@@ -994,6 +994,24 @@ AST çocuklarını dolaşması inert olduğu için başlık sink'leri çift rapo
 ve context sonucundan hedefe taint türetme semantiği ertelenmiştir; bu davranış
 bilinçli olarak testlerle korunur.
 
+## Paylaşılan source tanımı
+
+SQL Injection ve XSS, Flask request input kaynağını aynı `id` ve `kind` ile
+taşıyan iki ayrı `SourcePattern` olarak tanımlıyordu. Ölçülen tek fark
+`request.values` hedefiydi: XSS bunu kapsarken SQL Injection kapsamıyordu ve
+`request.values['n']` değerinin `cursor.execute` sink'ine ulaşması 0 bulgu
+üretiyordu. Bu kayma tesadüfi bir yazım hatası değil, tanımın kural dosyalarında
+kopyalanmasının ürettiği sürdürülemez bir yapısal kaymadır.
+
+Bu nedenle yalnızca `targets` tuple'ı değil, `SourcePattern`'in tamamı
+`rules/sources.py` içinde tek bir immutable örnek olarak paylaşılır. Böylece
+`id`, `kind` ve hedefler birlikte değişir; kural başına özel source tanımlamak
+ise farklı bir `kind` gerektiğinde hâlâ mümkündür.
+
+Değişiklik M6'dan önce ve ayrı yapıldı: M6'nın diff'i yeni kategorinin saf
+eklenmesi olarak kalmalı ve bu değişikliğin yayınlanmış SQL Injection
+davranışını genişletmesi ayrı, bisect edilebilir bir diff olmalıdır.
+
 ## CLI ve Finding'in dosya alanı
 
 ### Kuralların pakete taşınması

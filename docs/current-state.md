@@ -19,8 +19,8 @@
 |---|---|---|
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
-| CLI | Çalıştırılabilir tarayıcı | sırada |
-| M6 | Path Manipulation | CLI'dan sonra |
+| CLI | Çalıştırılabilir tarayıcı | tamamlandı |
+| M6 | Path Manipulation | sırada |
 | M7 | Sensitive Data Exposure | M6'dan sonra |
 | M11a | Triage denemesi (küçük ölçek) | M7'den sonra |
 | M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
@@ -82,6 +82,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - `Await` expression propagation
 - `RestSelector` ile variadic CallModel argüman propagation (`os.path.join`, `format`)
 - Çalıştırılabilir CLI tarayıcısı (`codexray scan` ve `python -m codexray`)
+- Paylaşılan Flask request source tanımı (`rules/sources.py`)
 - Dosya konumlu `Finding` ve insan / JSON raporlama
 - Receiver analizi (`Response(v).upper()` içindeki sink görünür)
 - Receiver propagation (`v.upper()`, `request.args.get('q')`, metot zincirleri)
@@ -92,7 +93,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-201 passed
+207 passed
 
 ## Current SQL Injection Flow
 
@@ -178,6 +179,11 @@ Currently implemented:
 
 - SQL Injection
 - XSS (reflected/server-side)
+
+### `src/codexray/rules/sources.py`
+
+Contains source patterns shared by multiple vulnerability rules, currently the
+Flask request input source used by SQL Injection and XSS.
 
 ### `tests/`
 

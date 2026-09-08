@@ -25,3 +25,13 @@ def test_vulnerable_example_produces_finding():
 def test_safe_example_produces_no_finding():
     findings = _analyze(EXAMPLES_DIR / "safe" / "sql_injection.py")
     assert findings == []
+
+
+def test_request_values_now_reaches_sql_sink(tmp_path):
+    path = tmp_path / "request_values.py"
+    path.write_text("q = request.values['n']\ncursor.execute(q)\n")
+
+    findings = _analyze(path)
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "sql-injection"
