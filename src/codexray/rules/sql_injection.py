@@ -28,7 +28,15 @@ SQL_INJECTION_RULE = Rule(
     sinks=(
         SinkPattern(
             id="sqlite-cursor-execute",
-            targets=(CallTarget(qualified_name="cursor.execute", module="sqlite3"),),
+            # Hedef `cursor.execute` degil `execute`: nitelikli-ad suffix
+            # eslestirmesi cursor degiskeninin ADINDAN bagimsiz calissin diye.
+            # Olculdu -- `cursor.execute` hedefiyle `c.execute`, `cur.execute`,
+            # `db.execute` ve `conn.execute` hicbiri eslesmiyordu; gercek kod
+            # bu adlari kullaniyor.
+            targets=(
+                CallTarget(qualified_name="execute", module="sqlite3"),
+                CallTarget(qualified_name="executemany", module="sqlite3"),
+            ),
             dangerous_arguments=(0,),
             requires_sanitization_for=("sql",),
         ),

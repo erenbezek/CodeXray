@@ -1447,3 +1447,82 @@ edilememedir. Bu kayıt kesintiyi açık hâle getirir.
 Taint gerektiren dört kategori: SQL Injection, XSS, Path Manipulation,
 Sensitive Data Exposure — sonuncusu farklı bir source ailesiyle, yani motorun
 yalnızca sink tarafında değil kaynak tarafında da genelleştiğinin kanıtıyla.
+
+
+## Gerçek uygulama taraması — motor ilk kez gerçek kodda
+
+On milestone boyunca motor yalnızca birim testleri ve `examples/` üzerinde
+çalıştırıldı. İlk gerçek kod taraması iki hedefte yapıldı ve **iki gün
+kaybettirecek bir körlük ortaya çıkardı.**
+
+### Hedefler
+
+| Hedef | Ne | Boyut |
+|---|---|---|
+| `vulpy` | Bilerek zafiyetli Flask eğitim uygulaması | 57 dosya, 2 373 satır |
+| `flask` + `werkzeug` + `jinja2` | Gerçek üretim kodu | 101 dosya, 45 137 satır |
+
+### Bulunan körlük: SQL sink'i cursor değişkeninin ADINA bağlıydı
+
+vulpy taraması **0 bulgu** verdi. Teşhis:
+
+    cursor.execute(v)  -> 1 bulgu
+    c.execute(v)       -> 0        <- vulpy bunu kullaniyor
+    cur.execute(v)     -> 0
+    db.execute(v)      -> 0
+    conn.execute(v)    -> 0
+
+Kural `CallTarget("cursor.execute")` hedefliyordu ve nitelikli-ad suffix
+eşleştirmesi `"c.execute"` ile eşleşmiyor. Yani sink, cursor değişkeninin
+harfiyen `cursor` adını taşımasını istiyordu.
+
+**M4'ten beri böyleydi.** Görünmemesinin sebebi her testin ve her örneğin
+`cursor` adını kullanmasıydı — testler kuralın kendi varsayımını
+tekrarlıyordu, sınamıyordu.
+
+Düzeltme tek satır ve kural içeriğinde: hedef `execute` (artı `executemany`).
+Motor değişmedi. Ölçüldü — altı farklı cursor adı da artık eşleşiyor,
+sanitizer davranışı korunuyor.
+
+**Yanlış pozitif maliyeti sıfır ölçüldü:** 45 137 satır gerçek üretim
+kodunda (Flask, Werkzeug, Jinja2) 0 bulgu, düzeltmeden önce de sonra da.
+
+### vulpy hâlâ 0 bulgu veriyor — ve sebebi ölçüldü
+
+Düzeltmeden sonra bile vulpy'nin SQLi'si yakalanmıyor, çünkü kod **aynı anda
+üç dokümante edilmiş sınıra** çarpıyor:
+
+    # mod_user.py (route handler)
+    username = request.form.get('username')       # SOURCE  -- calisiyor
+    username = libuser.login(username, password)  # 1) fonksiyon + modul siniri
+
+    # libuser.py
+    def login(username, password):
+        c.execute("SELECT ... '{}' ...".format(username))   # 2) literal receiver
+
+1. **Inter-procedural.** Source route handler'da, sink başka bir modüldeki
+   fonksiyonda. MVP'nin ilk günden ilan ettiği sınır.
+2. **Literal receiver `.format()`.** M5.8/M5.10'da ölçülüp bilinçli olarak
+   ertelendi: `"...".format(x)` hiçbir nitelikli ada çözülmüyor.
+3. **`%` tuple ile.** `"..." % (u, p)` — tuple `CLEAN` döndüğü için taint
+   taşımıyor (konteyner ertelemesi). Tek değerle `"..." % u` çalışıyor.
+
+Aynı kalıbın çalışan biçimleri ölçüldü:
+
+    tek fonksiyon, f-string      -> 1 bulgu
+    tek fonksiyon, "%s" % kirli  -> 1 bulgu
+    tek fonksiyon, dogrudan      -> 1 bulgu
+    tek fonksiyon, .format()     -> 0    (literal receiver)
+    tek fonksiyon, "%s" % (k,)   -> 0    (konteyner)
+    iki fonksiyon                -> 0    (inter-procedural)
+
+### Ne öğretti
+
+Bu tarama, projenin kendi disiplininin bir boşluğunu gösterdi: **testler ve
+örnekler aynı kişi tarafından yazıldığında kuralın varsayımını tekrarlar.**
+`cursor` adı on milestone boyunca hiç sorgulanmadı çünkü onu sorgulayacak
+tek şey gerçek koddu.
+
+Ölçmeden iddia etmeme disiplini iddiaları doğruladı; ama *hangi iddiaların
+kurulacağını* seçen şey yine aynı varsayımlardı. Gerçek kod bu döngüyü
+kıran tek girdi.
