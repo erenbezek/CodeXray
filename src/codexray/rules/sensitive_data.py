@@ -24,6 +24,17 @@ SENSITIVE_DATA_RULE = Rule(
                 CallTarget(qualified_name="token"),
                 CallTarget(qualified_name="api_token"),
                 CallTarget(qualified_name="private_key"),
+                # Django ve Flask konfigurasyon sabitleri konvansiyon geregi
+                # BUYUK harflidir; eslestirme buyuk/kucuk harf duyarli oldugu
+                # icin varyantlar ayrica sayilir.  Genel cozum (bu source
+                # ailesi icin duyarsiz eslestirme) matches_target'i ve dolayisiyla
+                # her kurali etkiler -- ayri bir karar.
+                CallTarget(qualified_name="PASSWORD"),
+                CallTarget(qualified_name="SECRET"),
+                CallTarget(qualified_name="API_KEY"),
+                CallTarget(qualified_name="TOKEN"),
+                CallTarget(qualified_name="API_TOKEN"),
+                CallTarget(qualified_name="PRIVATE_KEY"),
                 CallTarget(qualified_name="SECRET_KEY"),
                 CallTarget(qualified_name="DATABASE_PASSWORD"),
                 CallTarget(qualified_name="os.environ"),

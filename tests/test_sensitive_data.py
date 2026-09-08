@@ -112,3 +112,45 @@ def test_sensitive_data_examples_have_expected_results():
 
     assert len(_analyze(vulnerable).findings) == 1
     assert _analyze(safe).findings == []
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "settings.SECRET_KEY",
+        "settings.API_TOKEN",
+        "settings.PASSWORD",
+        "config.SECRET",
+        "config.TOKEN",
+        "app.config.API_KEY",
+        "creds.PRIVATE_KEY",
+        "settings.DATABASE_PASSWORD",
+    ],
+)
+def test_uppercase_config_constants_are_sensitive_sources(expression: str):
+    """Django and Flask name config constants in upper case by convention.
+
+    Matching is case sensitive, so the upper-case spellings are listed
+    separately; without them the rule missed the most common shape of the
+    thing it looks for.
+    """
+    analyzer = _analyze(f"value = {expression}\nprint(value)\n")
+
+    assert len(analyzer.findings) == 1
+    assert analyzer.findings[0].rule_id == "sensitive-data-exposure"
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "settings.DEBUG",
+        "config.TIMEOUT",
+        "settings.ALLOWED_HOSTS",
+        "user.name",
+        "config.DATABASE_URL",
+    ],
+)
+def test_upper_case_alone_does_not_make_a_value_sensitive(expression: str):
+    analyzer = _analyze(f"value = {expression}\nprint(value)\n")
+
+    assert analyzer.findings == []

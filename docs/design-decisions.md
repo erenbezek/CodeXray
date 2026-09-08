@@ -1304,3 +1304,44 @@ Bu, `TaintState.source`'un hâlâ tek kaynak taşıması anlamına gelen genel
 multi-source provenance borcunu kapatmaz — yalnızca **sink kapısını besleyen**
 alanı çoğullaştırır. `source` raporlamada kullanılıyor ve bir kapı girdisi
 değil; çoğullaştırılması ayrı bir karardır.
+
+
+## M7'nin kaynak eşleştirmesi diğer kurallardan kategorik olarak farklı
+
+Bu bir iş maddesi değil, kayda geçirilmiş bir gözlem — dördüncü "tek aile
+varsayımı" sürprizini önlemek için.
+
+İlk üç kural belirli bir **API yolunu** hedefliyor:
+
+    CallTarget("request.args")     -> tam nitelikli ad
+
+M7 ise bir **isim sezgiseline** dayanıyor:
+
+    CallTarget("password")         -> ".password" ile biten HERHANGI bir ad
+
+Bu, projenin reddettiği regex'e dönüşmüyor — hâlâ ad tabanlı eşleştirme,
+desen değil. Ama hassasiyet profili farklı, ve bu farkın somut bir sonucu
+oldu: **büyük/küçük harf duyarlılığı SQL/XSS için doğru, M7 için sorun.**
+
+`request.args` tam olarak öyle yazılır. Ama Django ve Flask konfigürasyon
+sabitleri konvansiyon gereği büyük harflidir, dolayısıyla küçük harfli
+`password` / `token` hedefleri `settings.PASSWORD` ve `settings.API_TOKEN`
+gibi en yaygın biçimleri kaçırıyordu. Ölçüldü — kural ilk hâlinde:
+
+    settings.SECRET_KEY   -> bulundu
+    settings.API_TOKEN    -> KACIRILDI
+    settings.PASSWORD     -> KACIRILDI
+    config.SECRET         -> KACIRILDI
+
+Bugünün çözümü ucuz ve kural içeriğinde kaldı: büyük harfli varyantlar tek
+tek sayıldı (`PASSWORD`, `SECRET`, `API_KEY`, `TOKEN`, `API_TOKEN`,
+`PRIVATE_KEY`). M7'nin bütün değeri hassasiyetinde olduğu için kural ilk
+gününde amiral vakasını kaçırıyor olmamalıydı.
+
+Genel çözüm — bu source ailesi için büyük/küçük harf duyarsız eşleştirme —
+`matches_target()`'a dokunur ve **her kuralı** etkiler. Ayrı bir karar;
+burada alınmadı.
+
+Kapsamın genişlemediği de ölçüldü: `settings.DEBUG`, `config.TIMEOUT`,
+`settings.ALLOWED_HOSTS`, `user.name` ve `config.DATABASE_URL` hâlâ bulgu
+üretmiyor. Negatif testlerle sabitlendi.
