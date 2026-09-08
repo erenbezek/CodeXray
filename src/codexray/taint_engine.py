@@ -435,6 +435,7 @@ class TaintAnalyzer(ast.NodeVisitor):
         for match in sink_matches:
             rule = match.rule
             pattern = match.pattern
+            accepted_kinds = {source.kind for source in rule.sources}
             # Rule'daki TUM sanitizer'ların birleşimi değil, bu sink
             # pattern'inin kendi kabul ettiği kategoriler kullanılıyor.
             required = set(pattern.requires_sanitization_for)
@@ -448,6 +449,7 @@ class TaintAnalyzer(ast.NodeVisitor):
                 state = argument_states[argument]
                 if not state.tainted:
                     continue
+                if state.kind is not None and state.kind not in accepted_kinds: continue
                 if required and required.issubset(set(state.sanitized_for)):
                     continue
 

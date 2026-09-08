@@ -2,8 +2,8 @@ import ast
 
 import pytest
 
-from codexray.rule_model import RuleEngine
-from codexray.taint_engine import TaintAnalyzer
+from codexray.rule_model import CallTarget, Rule, RuleEngine, SinkPattern, SourcePattern
+from codexray.taint_engine import TaintAnalyzer, TaintState
 from codexray.rules.sql_injection import SQL_INJECTION_RULE
 
 
@@ -11,6 +11,29 @@ def _analyze(code: str) -> TaintAnalyzer:
     analyzer = TaintAnalyzer(RuleEngine([SQL_INJECTION_RULE]))
     analyzer.visit(ast.parse(code))
     return analyzer
+
+
+def _kind_rule(kind: str, source: str) -> Rule:
+    return Rule(
+        id=f"{kind}-rule",
+        cwe="CWE-000",
+        severity="LOW",
+        sources=(
+            SourcePattern(
+                id=f"{kind}-source",
+                kind=kind,
+                targets=(CallTarget(source),),
+            ),
+        ),
+        sanitizers=(),
+        sinks=(
+            SinkPattern(
+                id="shared-sink",
+                targets=(CallTarget("sink"),),
+                dangerous_arguments=(0,),
+            ),
+        ),
+    )
 
 
 def test_source_is_tainted():
@@ -98,3 +121,35 @@ def test_get_json_is_an_additional_source():
 
     assert analyzer.env["value"].tainted
     assert analyzer.env["value"].source == "request.get_json"
+
+
+def test_sink_kind_isolation_selects_only_the_matching_rule():
+    user_rule = _kind_rule("user-input", "request.args")
+    sensitive_rule = _kind_rule("sensitive", "secret")
+    analyzer = TaintAnalyzer(RuleEngine([user_rule, sensitive_rule]))
+    analyzer.visit(ast.parse("value = request.args['q']\nsink(value)\n"))
+
+    assert len(analyzer.findings) == 1
+    assert analyzer.findings[0].rule_id == "user-input-rule"
+
+
+def test_sensitive_kind_reaches_its_own_sink():
+    analyzer = TaintAnalyzer(
+        RuleEngine([_kind_rule("sensitive", "secret.value")])
+    )
+    analyzer.visit(ast.parse("value = secret.value\nsink(value)\n"))
+
+    assert len(analyzer.findings) == 1
+    assert analyzer.findings[0].rule_id == "sensitive-rule"
+
+
+def test_kindless_taint_is_not_filtered():
+    analyzer = TaintAnalyzer(RuleEngine([_kind_rule("sensitive", "secret")]))
+    analyzer.env["value"] = TaintState(
+        tainted=True,
+        source="manual",
+        path=("manual",),
+    )
+    analyzer.visit(ast.parse("sink(value)\n"))
+
+    assert len(analyzer.findings) == 1
