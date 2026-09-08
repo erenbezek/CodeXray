@@ -242,7 +242,7 @@ Bir finding şu bilgileri içerebilir:
 - rule
 - CWE
 - severity
-- kind (kaynağın ailesi: `user-input`, `sensitive`, ...)
+- kind (bu bulguyu tetikleyen kaynak ailesi: `user-input`, `sensitive`, ...)
 - path (kaynaktan sink'e veri akışı)
 - line number
 - filename

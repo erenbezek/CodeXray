@@ -153,3 +153,98 @@ def test_kindless_taint_is_not_filtered():
     analyzer.visit(ast.parse("sink(value)\n"))
 
     assert len(analyzer.findings) == 1
+
+
+def _two_family_engine() -> RuleEngine:
+    return RuleEngine(
+        [
+            _kind_rule("user-input", "request.args"),
+            _kind_rule("sensitive", "secret.value"),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ["user + secret_value", "secret_value + user"],
+    ids=("user-first", "secret-first"),
+)
+def test_merged_value_keeps_every_contributing_kind(expression: str):
+    """Order of operands must not decide which family's sinks can fire.
+
+    A single `kind` field made this order-dependent: merge_states took the
+    first tainted part's kind, so one family was silently dropped.
+    """
+    analyzer = TaintAnalyzer(_two_family_engine())
+    analyzer.visit(
+        ast.parse(
+            "user = request.args['q']\n"
+            "secret_value = secret.value\n"
+            f"merged = {expression}\n"
+        )
+    )
+
+    assert analyzer.env["merged"].kinds == frozenset({"user-input", "sensitive"})
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ["user + secret_value", "secret_value + user"],
+    ids=("user-first", "secret-first"),
+)
+def test_merged_value_reaches_both_families_sinks(expression: str):
+    analyzer = TaintAnalyzer(_two_family_engine())
+    analyzer.visit(
+        ast.parse(
+            "user = request.args['q']\n"
+            "secret_value = secret.value\n"
+            f"merged = {expression}\n"
+            "sink(merged)\n"
+        )
+    )
+
+    assert {finding.rule_id for finding in analyzer.findings} == {
+        "user-input-rule",
+        "sensitive-rule",
+    }
+
+
+def test_finding_reports_the_kind_that_matched_not_a_primary():
+    analyzer = TaintAnalyzer(_two_family_engine())
+    analyzer.visit(
+        ast.parse(
+            "user = request.args['q']\n"
+            "secret_value = secret.value\n"
+            "merged = user + secret_value\n"
+            "sink(merged)\n"
+        )
+    )
+
+    reported = {finding.rule_id: finding.kind for finding in analyzer.findings}
+    assert reported == {
+        "user-input-rule": "user-input",
+        "sensitive-rule": "sensitive",
+    }
+
+
+def test_kinds_survive_call_model_propagation():
+    analyzer = TaintAnalyzer(_two_family_engine())
+    analyzer.visit(
+        ast.parse(
+            "user = request.args['q']\n"
+            "secret_value = secret.value\n"
+            "merged = user + secret_value\n"
+            "carried = merged.upper()\n"
+        )
+    )
+
+    assert analyzer.env["carried"].kinds == frozenset({"user-input", "sensitive"})
+
+
+def test_taint_state_has_no_singular_kind_field():
+    """A singular `kind` is the footgun this model exists to remove.
+
+    Reintroducing it invites `state.kind == "sensitive"`, which is exactly the
+    order-dependent read that dropped findings.
+    """
+    assert not hasattr(TaintState(tainted=False), "kind")

@@ -1240,31 +1240,67 @@ Değişiklikten önce `message`'a bakan **sıfır** test vardı ve alan yalnızc
 zamanda alanın hiç doğrulanmadığını gösteriyordu. `kind` aynı durumda
 bırakılmadı: üç yeni test ve üç mutasyon eklendi.
 
-## Kural izolasyonunun bedeli: karışık kaynaklı değerler
+## Kural izolasyonunun karışık kaynak regresyonu ve düzeltmesi
 
-İzolasyon eklendikten sonra ölçüldü. `merge_states()` birleştirilen state'in
-`kind`'ını **ilk tainted parçadan** alıyor (tek kaynak provenance, bilinen ve
-ertelenmiş borç). İzolasyonla birlikte bu artık rapor sadeleştirmesi değil,
-**sessizce düşen bulgu** anlamına geliyor — ve sonuç operand sırasına bağlı:
+### Regresyon
 
-    v = request.args['q']; s = os.environ['S']
+İzolasyon eklendikten sonra ölçüldü. `TaintState` tek bir `kind` taşıyordu ve
+`merge_states()` onu **ilk tainted parçadan** alıyordu (tek kaynak provenance).
+İzolasyon kapısı o tekil değere baktığı için, karışık kaynaklı bir değerde bir
+aile sessizce düşüyordu — ve sonuç **operand sırasına** bağlıydı:
 
-    w = v + s   -> kind='user-input'  -> print(w)           0 bulgu  (sir kaciyor)
-    w = s + v   -> kind='sensitive'   -> cursor.execute(w)  0 bulgu  (SQLi kaciyor)
+    u = request.args['q']; t = os.environ['TOKEN']
 
-Gerçekçi kalıpta ölçüldü:
+    w = u + t   -> kind='user-input'  -> print(w)           0 bulgu  (sir kaciyor)
+    w = t + u   -> kind='sensitive'   -> cursor.execute(w)  0 bulgu  (SQLi kaciyor)
 
-    logging.info('user ' + u + ' token ' + t)   -> 0 bulgu
+Gerçekçi kalıpta:
 
-API token loglanıyor ve kaçırılıyor, sırf kullanıcı operandı önce geldiği
+    logging.info('user ' + u + ' token ' + t)   ->  0 bulgu
+
+API token loglanıyor ve kaçırılıyordu, sırf kullanıcı operandı önce geldiği
 için.
 
-İzolasyon öncesinde ikisi de raporlanıyordu — ama yanlış sebeple (sink her
-tainted değer için ateşleniyordu) ve dört ölçülmüş yanlış bulguyla birlikte.
-Takas bilinçli: sistematik false positive yerine belirli bir şekilde false
-negative.
+Bu, "dokümante edilmiş borç yüzeye çıktı" değil, **izolasyon değişikliğinin
+yarattığı bir regresyondu**: doğru karşılaştırma M7+izolasyon ile
+M7-izolasyonsuz arasındadır ve izolasyonsuz halde ikisi de raporlanıyordu.
+Sessiz ve operand sırasına bağlı bir false negative, bir güvenlik aracında
+sistematik false positive'den kötüdür. Bu nedenle sevk edilmedi, düzeltildi.
 
-Bu, **multi-source provenance** borcunun ilk kez kaçırılan bulguya yol
-açtığı yerdir. Borç `TaintState`'in tek bir `kind` taşımasından kaynaklanıyor;
-kapatmak `kind`'ı bir kümeye çevirmeyi ve `_check_sinks`'te kesişim kontrolünü
-gerektirir. Ayrı bir karar ve M7 kapsamı dışında, ancak önceliği artmıştır.
+### Karar: `kind` yerine `kinds`
+
+`TaintState.kind: str | None` **kaldırıldı**, yerine
+`TaintState.kinds: frozenset[str]` geldi.
+
+- Source kurulumu tek elemanlı bir küme üretir.
+- `merge_states()` katkıda bulunan tüm parçaların kümelerini **birleştirir**
+  (`sanitized_for`'un kesişim almasının tersi yönde: sanitization'da
+  muhafazakâr olan kesişim, provenance'ta ise birleşimdir).
+- `_check_sinks` kesişime bakar: `state.kinds & accepted_kinds` boş değilse
+  sink ateşlenir.
+- `Finding.kind` **eşleşen** kind'ı raporlar, bir "birincil" kind'ı değil.
+
+Tekil `kind` alanı bilinçli olarak geri getirilmedi. Bırakılsaydı ileride
+biri `state.kind == "sensitive"` yazabilirdi — tam da bu regresyonu yaratan
+sıra-bağımlı okuma. Bir test bu alanın yokluğunu sabitliyor.
+
+### Ölçüm
+
+Düzeltmeden sonra, her iki operand sırasında da:
+
+    w = u + t  ve  w = t + u   ->  print(w)           sensitive-data-exposure
+    w = u + t  ve  w = t + u   ->  cursor.execute(w)  sql-injection
+    logging.info('user ' + u + ' token ' + t)      ->  sensitive-data-exposure
+
+Karışık bir değer **her iki** ailenin sink'ini de ateşler; her bulgu kendi
+eşleşen kind'ıyla raporlanır. İzolasyonun kazanımları korunuyor: `os.environ`
+değeri `cursor.execute`/`open`'a, `request.args` değeri `print`'e hâlâ 0 bulgu
+veriyor. Kinds, CallModel, receiver, `os.path.join` ve f-string yollarından
+korunarak taşınıyor.
+
+### Kapsam dışı kalan
+
+Bu, `TaintState.source`'un hâlâ tek kaynak taşıması anlamına gelen genel
+multi-source provenance borcunu kapatmaz — yalnızca **sink kapısını besleyen**
+alanı çoğullaştırır. `source` raporlamada kullanılıyor ve bir kapı girdisi
+değil; çoğullaştırılması ayrı bir karardır.

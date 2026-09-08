@@ -29,7 +29,12 @@ class TaintState:
     """Immutable -- b = a sonrasinda b'yi degistirmek a'yi etkilemesin diye."""
     tainted: bool
     source: str | None = None
-    kind: str | None = None
+    kinds: frozenset[str] = frozenset()
+    """Katkida bulunan TUM source ailelerinin kumesi.
+
+    Tekil bir `kind` alani bilincli olarak yok: birlestirilen bir degerde
+    hangi tekil kind'in secilecegi operand sirasina bagli olurdu ve sink
+    kapisi sessizce bulgu dusururdu."""
     path: tuple[str, ...] = ()
     sanitized_for: tuple[str, ...] = ()
 
@@ -77,7 +82,7 @@ def merge_states(*states: TaintState) -> TaintState:
     return TaintState(
         tainted=True,
         source=primary.source,
-        kind=primary.kind,
+        kinds=frozenset().union(*(s.kinds for s in tainted_states)),
         path=tuple(combined_path),
         sanitized_for=combined_sanitized,
     )
@@ -194,7 +199,8 @@ class TaintAnalyzer(ast.NodeVisitor):
             if match.role == "source":
                 qname = resolve_qualified_name(node) or "<source>"
                 return TaintState(
-                    tainted=True, source=qname, kind=match.pattern.kind, path=(qname,)
+                    tainted=True, source=qname,
+                    kinds=frozenset({match.pattern.kind}), path=(qname,)
                 )
         return None
 
@@ -316,7 +322,8 @@ class TaintAnalyzer(ast.NodeVisitor):
         if source_matches:
             match = source_matches[0]
             return TaintState(
-                tainted=True, source=qname, kind=match.pattern.kind, path=(qname,)
+                tainted=True, source=qname,
+                kinds=frozenset({match.pattern.kind}), path=(qname,)
             )
 
         sanitizer_matches = [m for m in matches if m.role == "sanitizer"]
@@ -457,7 +464,8 @@ class TaintAnalyzer(ast.NodeVisitor):
                 # Bir sink yalnizca KENDI kuralinin bildirdigi source
                 # kind'lari icin ateslenir -- kurallar birbirinin kaynagini
                 # tetiklemez.
-                if state.kind is not None and state.kind not in accepted_kinds:
+                matched_kinds = state.kinds & accepted_kinds
+                if state.kinds and not matched_kinds:
                     continue
                 if required and required.issubset(set(state.sanitized_for)):
                     continue
@@ -467,7 +475,7 @@ class TaintAnalyzer(ast.NodeVisitor):
                         rule_id=rule.id,
                         cwe=rule.cwe,
                         severity=rule.severity,
-                        kind=state.kind,
+                        kind=sorted(matched_kinds)[0] if matched_kinds else None,
                         path=state.path + (qname,),
                         lineno=node.lineno,
                         filename=self.filename,

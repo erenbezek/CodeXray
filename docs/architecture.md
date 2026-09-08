@@ -54,6 +54,13 @@ TaintState (immutable):
 bir SQL sanitizer'ının HTML sink'i için otomatik güvenli sayılmamasını
 sağlıyor.
 
+`TaintState` katkıda bulunan source ailelerini `kinds: frozenset[str]` olarak
+taşır, tekil bir `kind` olarak değil. `merge_states()` bu kümeleri birleştirir
+(`sanitized_for`'un kesişim almasının tersi yönde) ve bir sink yalnızca
+`state.kinds` ile kendi kuralının bildirdiği kind'ların kesişimi boş değilse
+ateşlenir. Tekil bir alan, karışık kaynaklı bir değerde hangi ailenin
+görüleceğini operand sırasına bağlar ve bulgu düşürür.
+
 `Finding` nesir taşımaz: alanları `rule_id`, `cwe`, `severity`, `kind`,
 `path`, `lineno` ve `filename`. Cümle kurmak sunum katmanının işidir —
 `path[0]` kaynağı, `path[-1]` sink'i, `kind` kaynağın ailesini adlandırır.
