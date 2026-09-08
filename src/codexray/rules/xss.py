@@ -10,31 +10,15 @@ from codexray.rule_model import (
     Rule,
     SanitizerPattern,
     SinkPattern,
-    SourcePattern,
 )
+from codexray.rules.sources import FLASK_REQUEST_INPUT
 
 
 XSS_RULE = Rule(
     id="xss",
     cwe="CWE-79",
     severity="HIGH",
-    sources=(
-        SourcePattern(
-            id="flask-request-input",
-            kind="user-input",
-            targets=(
-                CallTarget(qualified_name="request.args"),
-                CallTarget(qualified_name="request.form"),
-                CallTarget(qualified_name="request.values"),
-                CallTarget(qualified_name="request.json"),
-                CallTarget(qualified_name="request.cookies"),
-                CallTarget(qualified_name="request.headers"),
-                CallTarget(qualified_name="request.data"),
-                CallTarget(qualified_name="request.files"),
-                CallTarget(qualified_name="request.get_json"),
-            ),
-        ),
-    ),
+    sources=(FLASK_REQUEST_INPUT,),
     sanitizers=(
         SanitizerPattern(
             id="html-text-escape",

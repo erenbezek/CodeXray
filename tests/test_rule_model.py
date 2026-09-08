@@ -8,6 +8,9 @@ from codexray.rule_model import (
     SinkPattern,
     SourcePattern,
 )
+from codexray.rules.sources import FLASK_REQUEST_INPUT
+from codexray.rules.sql_injection import SQL_INJECTION_RULE
+from codexray.rules.xss import XSS_RULE
 
 
 def _dummy_rule() -> Rule:
@@ -57,3 +60,11 @@ def test_classify_no_match_for_unrelated_call():
     engine = RuleEngine([_dummy_rule()])
     matches = engine.classify(_node("print(x)"))
     assert matches == []
+
+
+def test_flask_request_source_is_shared_by_sql_and_xss():
+    assert SQL_INJECTION_RULE.sources[0] is FLASK_REQUEST_INPUT
+    assert XSS_RULE.sources[0] is FLASK_REQUEST_INPUT
+    assert len(FLASK_REQUEST_INPUT.targets) == 9
+    assert FLASK_REQUEST_INPUT.id == "flask-request-input"
+    assert FLASK_REQUEST_INPUT.kind == "user-input"

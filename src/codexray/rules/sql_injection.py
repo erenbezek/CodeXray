@@ -10,29 +10,14 @@ from codexray.rule_model import (
     Rule,
     SanitizerPattern,
     SinkPattern,
-    SourcePattern,
 )
+from codexray.rules.sources import FLASK_REQUEST_INPUT
 
 SQL_INJECTION_RULE = Rule(
     id="sql-injection",
     cwe="CWE-89",
     severity="CRITICAL",
-    sources=(
-        SourcePattern(
-            id="flask-request-input",
-            kind="user-input",
-            targets=(
-                CallTarget(qualified_name="request.args"),
-                CallTarget(qualified_name="request.form"),
-                CallTarget(qualified_name="request.json"),
-                CallTarget(qualified_name="request.cookies"),
-                CallTarget(qualified_name="request.headers"),
-                CallTarget(qualified_name="request.data"),
-                CallTarget(qualified_name="request.files"),
-                CallTarget(qualified_name="request.get_json"),
-            ),
-        ),
-    ),
+    sources=(FLASK_REQUEST_INPUT,),
     sanitizers=(
         SanitizerPattern(
             id="sql-escape",
