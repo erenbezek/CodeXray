@@ -70,6 +70,14 @@ Rule
 CallTarget(qualified_name, module)  — eşleştirme birimi
 ```
 
+### Kural izolasyonu
+
+Bir sink yalnızca kendi `Rule`'unun bildirdiği source `kind` değerleriyle
+eşleşen taint state'leri için ateşlenir. Bu kontrol generic bir `TaintState`
+alanı olan `kind` üzerinden yapılır; SQL, XSS veya path gibi kategoriye özgü
+isimleri traversal motoruna taşımaz. `kind=None` olan tainted state'ler
+geriye dönük güvenli varsayımla filtrelenmez.
+
 E�leştirme **qualified-name tabanlı** (`resolve_qualified_name()` AST'de
 `Attribute`/`Name`/`Call`/`Subscript` zincirini `"cursor.execute"` gibi
 bir string'e çevirir), regex tabanlı değil. Gerekçe: `docs/design-decisions.md`.

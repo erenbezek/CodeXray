@@ -2,8 +2,8 @@
 
 ## Current Milestone
 
-**M6 (Path Manipulation) tamamlandı.** Kategori #3'e geçmeden önce taint
-motorundaki genel bilgi kayıpları kapatıldı. Sırayla:
+**M7 (Sensitive Data Exposure) tamamlandı.** M6'dan sonra taint motoru
+farklı source kind ailelerini de kural bazında izole ediyor. Sırayla:
 
 | Adım | Ne yapıldı | Durum |
 |---|---|---|
@@ -21,8 +21,8 @@ motorundaki genel bilgi kayıpları kapatıldı. Sırayla:
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
 | CLI | Çalıştırılabilir tarayıcı | tamamlandı |
 | M6 | Path Manipulation | tamamlandı |
-| M7 | Sensitive Data Exposure | sırada |
-| M11a | Triage denemesi (küçük ölçek) | M7'den sonra |
+| M7 | Sensitive Data Exposure | tamamlandı |
+| M11a | Triage denemesi (küçük ölçek) | sırada |
 | M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
 
@@ -74,6 +74,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - SQL Injection rule
 - Reflected/server-side XSS rule (Python + Flask)
 - Path Manipulation rule (Python + Flask)
+- Sensitive Data Exposure rule (Python + Flask)
 - Generic `CallModel` / `CallModelRegistry` (explicit call-return propagation)
 - Shared call-argument binding (parametre başına tek selector, pozisyonel + keyword)
 - Statement kapsamı: `return`, `AugAssign`, `AnnAssign`, `raise`, `assert`
@@ -94,7 +95,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-245 passed
+266 passed
 
 ## Current SQL Injection Flow
 
@@ -181,6 +182,11 @@ Currently implemented:
 - SQL Injection
 - XSS (reflected/server-side)
 - Path Manipulation
+- Sensitive Data Exposure
+
+### `src/codexray/rules/sensitive_data.py`
+
+Contains the separate `sensitive` source family and CWE-200 sinks.
 
 ### `src/codexray/rules/sources.py`
 
@@ -204,8 +210,6 @@ Flask request input source used by SQL Injection and XSS.
 Contains vulnerable and safe example Python code.
 
 ## Not Implemented Yet
-
-- Sensitive Data Exposure
 - AST structural rules
 - Presence-check rules
 - Dependency scanning

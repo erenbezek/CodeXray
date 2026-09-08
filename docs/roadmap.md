@@ -31,10 +31,10 @@ CLI  Calistirilabilir tarayici           <-- TAMAMLANDI
      |
 M6  Path Manipulation                     <-- TAMAMLANDI
      |
-M7  Sensitive Data Exposure               <-- next
+M7  Sensitive Data Exposure               <-- TAMAMLANDI
      |   (ilk farkli source ailesi -- genellenebilirligin asil sinavi)
      |
-M11a Triage denemesi (kucuk olcek)
+M11a Triage denemesi (kucuk olcek)        <-- next
      |   (kategori sayisindan bagimsiz, yukari cekildi)
      |
 M8d Ikinci kural sekli tasarim karari

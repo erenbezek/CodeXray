@@ -29,6 +29,8 @@ reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
   input'ları → HTML text sanitizer → `Response`, `make_response` veya `Markup`.
 - **Path Manipulation (CWE-22)** için Flask request input'larının güvenli
   basename sanitizer'ları olmadan dosya sink'lerine ulaşması.
+- **Sensitive Data Exposure (CWE-200)** için hassas kaynakların konsol, log
+  veya HTTP yanıtlarına ifşa edilmesi.
 
 ## Neden bu proje
 
