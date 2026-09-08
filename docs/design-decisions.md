@@ -1165,3 +1165,106 @@ CI `pip install .` çalıştırsa da testleri `pythonpath` ayarıyla kaynak
 ağacından import ettiği için kurulan paketi henüz sınamıyor. İzole venv
 doğrulaması bu CLI değişikliğinde elle yapıldı; CI'ın kurulu paketi test etmesi
 ayrı bir iş olarak bırakıldı.
+
+
+## Bulgu mesajı motordan çıkarıldı
+
+### Kök neden
+
+`_check_sinks` her bulgu için sabit bir cümle kuruyordu:
+
+    "{source} kaynakli kullanici girdisi, sanitize edilmeden {sink}'ine ulasiyor"
+
+M7'ye kadar bu doğruydu; üç kuralın da kaynağı gerçekten kullanıcı girdisiydi
+ve üçünün de `requires_sanitization_for`'u doluydu. M7 ikinci source ailesini
+(`kind="sensitive"`) getirince cümle yalan söylemeye başladı: `os.environ`
+kullanıcı girdisi değil, ve M7'nin sanitizer'ı yok.
+
+Bu, kural izolasyonu sorununun **birebir aynı şekli**: tek source ailesi
+varken doğru olan bir varsayım, ikinci aile gelince kırıldı.
+
+### Elenen üç seçenek
+
+Kural başına mesaj şablonu alanı, `kind`'ı cümleye gömmek, ve nötr bir cümle
+kurmak. Üçü de aynı soruyu soruyordu: *motor cümleyi nasıl kursun.* Asıl soru
+**motor neden cümle kuruyor** idi.
+
+### Karar
+
+`Finding.message: str` kaldırıldı, yerine `Finding.kind: str | None` geldi.
+Alan sayısı aynı, `_check_sinks`'te tek değişiklik: `kind=state.kind`.
+
+Cümledeki her olgu zaten `Finding`'de vardı, biri hariç:
+
+| Cümle parçası | Nerede |
+|---|---|
+| kaynak | `path[0]` |
+| "kullanıcı girdisi" | hiçbir yerde — sabit kodlanmıştı |
+| "sanitize edilmeden" | bulgunun var olması zaten ima ediyor |
+| sink | `path[-1]` |
+
+Yani nesir tek bir olgu taşıyordu: kaynağın ailesi. O artık `kind` olarak
+yapısal biçimde duruyor.
+
+Nesir sunum katmanına taşındı; CLI zaten vardı. İnsan çıktısı üç satırdan
+ikiye indi ve `kind` başlık satırında etiket olarak görünüyor:
+
+    sensitive_data.py:5  MEDIUM  sensitive-data-exposure  CWE-200  [sensitive]
+        os.environ -> secret -> print
+
+Kaldırılan üçüncü satır zaten üstündeki `path` satırının nesir hâliydi.
+
+### Neden bu mimariyi hizalıyor
+
+`project-context.md` ilk günden LLM triage katmanını "yanlış pozitifleri
+azaltan, **insan diline çeviren**" katman olarak tanımladı. İnsan diline
+çevirmek tasarım gereği M11'in işi; motorun kendi cümlesini kurması o katmanın
+işine el atmaktı. Ayrım artık net: **motor olgu üretir, triage ifade eder.**
+Yapısal veri M11 için hazır bir cümleden daha iyi girdi.
+
+### Neden M7 ile aynı PR'da
+
+`cli.py` main'de olduğu için JSON sözleşmesi yayınlanmış durumda ve
+`"message"` → `"kind"` onu değiştiriyor; ayrı görünürlük hak ediyor — ama
+ayrı **commit** olarak, ayrı PR olarak değil.
+
+Belirleyici gerekçe: **bugün main yalan söylemiyor.** Yalanı M7'nin kendisi
+yaratıyor. Düzeltme M7'den sonra ayrı bir PR olarak gelseydi, iki merge
+arasındaki sürede main yanlış sınıflandırma üretirdi. Bir güvenlik aracının
+tek bir merge döngüsü boyunca bile yanlış ifade üretmesi kabul edilmemeli.
+
+### Ölçüm
+
+Değişiklikten önce `message`'a bakan **sıfır** test vardı ve alan yalnızca
+`cli.py`'de iki yerde tüketiliyordu. Bu, değişikliği ucuz kıldı — ama aynı
+zamanda alanın hiç doğrulanmadığını gösteriyordu. `kind` aynı durumda
+bırakılmadı: üç yeni test ve üç mutasyon eklendi.
+
+## Kural izolasyonunun bedeli: karışık kaynaklı değerler
+
+İzolasyon eklendikten sonra ölçüldü. `merge_states()` birleştirilen state'in
+`kind`'ını **ilk tainted parçadan** alıyor (tek kaynak provenance, bilinen ve
+ertelenmiş borç). İzolasyonla birlikte bu artık rapor sadeleştirmesi değil,
+**sessizce düşen bulgu** anlamına geliyor — ve sonuç operand sırasına bağlı:
+
+    v = request.args['q']; s = os.environ['S']
+
+    w = v + s   -> kind='user-input'  -> print(w)           0 bulgu  (sir kaciyor)
+    w = s + v   -> kind='sensitive'   -> cursor.execute(w)  0 bulgu  (SQLi kaciyor)
+
+Gerçekçi kalıpta ölçüldü:
+
+    logging.info('user ' + u + ' token ' + t)   -> 0 bulgu
+
+API token loglanıyor ve kaçırılıyor, sırf kullanıcı operandı önce geldiği
+için.
+
+İzolasyon öncesinde ikisi de raporlanıyordu — ama yanlış sebeple (sink her
+tainted değer için ateşleniyordu) ve dört ölçülmüş yanlış bulguyla birlikte.
+Takas bilinçli: sistematik false positive yerine belirli bir şekilde false
+negative.
+
+Bu, **multi-source provenance** borcunun ilk kez kaçırılan bulguya yol
+açtığı yerdir. Borç `TaintState`'in tek bir `kind` taşımasından kaynaklanıyor;
+kapatmak `kind`'ı bir kümeye çevirmeyi ve `_check_sinks`'te kesişim kontrolünü
+gerektirir. Ayrı bir karar ve M7 kapsamı dışında, ancak önceliği artmıştır.

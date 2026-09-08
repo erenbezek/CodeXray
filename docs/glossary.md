@@ -242,9 +242,13 @@ Bir finding şu bilgileri içerebilir:
 - rule
 - CWE
 - severity
-- message
-- path
+- kind (kaynağın ailesi: `user-input`, `sensitive`, ...)
+- path (kaynaktan sink'e veri akışı)
 - line number
+- filename
+
+Bir finding **nesir içermez.** Cümle kurmak sunum katmanının işidir; motor
+olgu üretir. `path[0]` kaynağı, `path[-1]` sink'i adlandırır.
 
 ## CWE
 

@@ -39,10 +39,15 @@ CLEAN = TaintState(tainted=False)
 
 @dataclass(frozen=True)
 class Finding:
+    """Bir bulgunun olgulari -- nesir YOK.
+
+    Cumle kurmak sunum katmaninin isi: `path[0]` kaynagi, `path[-1]` sink'i,
+    `kind` kaynagin ailesini adlandirir. Motor olgu uretir, ifade etmez.
+    """
     rule_id: str
     cwe: str
     severity: str
-    message: str
+    kind: str | None
     path: tuple[str, ...]
     lineno: int
     filename: str | None = None
@@ -462,7 +467,7 @@ class TaintAnalyzer(ast.NodeVisitor):
                         rule_id=rule.id,
                         cwe=rule.cwe,
                         severity=rule.severity,
-                        message=f"{state.source} kaynakli kullanici girdisi, sanitize edilmeden {qname} sink'ine ulasiyor",
+                        kind=state.kind,
                         path=state.path + (qname,),
                         lineno=node.lineno,
                         filename=self.filename,

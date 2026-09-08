@@ -206,3 +206,50 @@ def test_unreadable_path_is_reported_in_json_summary(capsys, tmp_path):
     assert exit_code == 1
     assert payload["summary"]["findings"] == 1
     assert payload["summary"]["skipped_files"] == 1
+
+
+def test_finding_carries_the_source_kind_instead_of_prose(capsys, tmp_path):
+    """The engine reports facts; the sentence is the presentation layer's job."""
+    (tmp_path / "a.py").write_text(
+        "secret = os.environ['TOKEN']\nprint(secret)\n", encoding="utf-8"
+    )
+
+    exit_code = main(["scan", str(tmp_path), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    finding = payload["findings"][0]
+    assert exit_code == 1
+    assert finding["kind"] == "sensitive"
+    assert "message" not in finding
+    assert finding["taint_path"][0] == "os.environ"
+    assert finding["taint_path"][-1] == "print"
+
+
+def test_user_input_and_sensitive_findings_carry_different_kinds(capsys, tmp_path):
+    (tmp_path / "a.py").write_text(
+        "value = request.args['q']\nResponse(value)\n"
+        "secret = os.environ['TOKEN']\nprint(secret)\n",
+        encoding="utf-8",
+    )
+
+    main(["scan", str(tmp_path), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    kinds = {f["rule_id"]: f["kind"] for f in payload["findings"]}
+    assert kinds == {"xss": "user-input", "sensitive-data-exposure": "sensitive"}
+
+
+def test_human_output_tags_the_kind_and_prints_no_prose_line(capsys, tmp_path):
+    (tmp_path / "a.py").write_text(
+        "secret = os.environ['TOKEN']\nprint(secret)\n", encoding="utf-8"
+    )
+
+    main(["scan", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert "[sensitive]" in out
+    assert "os.environ -> secret -> print" in out
+    # The removed sentence claimed every source was user input.
+    assert "kullanici girdisi" not in out
+    # Two lines per finding: header and taint path.
+    assert len([line for line in out.splitlines() if line.strip()]) == 3

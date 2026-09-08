@@ -54,6 +54,12 @@ TaintState (immutable):
 bir SQL sanitizer'ının HTML sink'i için otomatik güvenli sayılmamasını
 sağlıyor.
 
+`Finding` nesir taşımaz: alanları `rule_id`, `cwe`, `severity`, `kind`,
+`path`, `lineno` ve `filename`. Cümle kurmak sunum katmanının işidir —
+`path[0]` kaynağı, `path[-1]` sink'i, `kind` kaynağın ailesini adlandırır.
+Motor olgu üretir, ifade etmez; insan diline çevirmek tasarım gereği triage
+katmanının (M11) işidir.
+
 `Finding` ayrıca `filename` taşır; böylece CLI bulgusu kendi başına dosya ve
 satır konumunu bildirir. JSON raporunda dosya `file`, satır `line`, taint izi
 ise `taint_path` anahtarlarıyla açıkça ayrılır. Bu şema M11 triage katmanının
