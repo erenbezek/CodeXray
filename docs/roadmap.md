@@ -26,6 +26,9 @@ M5.9 Statement header slotlari           <-- TAMAMLANDI
 M5.10 Variadic argument model            <-- TAMAMLANDI
      |   (os.path.join, tpl.format - keyfi sayida arguman)
      |
+CLI  Calistirilabilir tarayici           <-- TAMAMLANDI
+     |   (motorun ilk uctan uca kullanimi)
+     |
 M6  Path Manipulation                    <-- next
      |
 M7  Sensitive Data Exposure

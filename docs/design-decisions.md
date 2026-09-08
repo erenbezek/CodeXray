@@ -972,3 +972,33 @@ AST çocuklarını dolaşması inert olduğu için başlık sink'leri çift rapo
 `for` target ve `with ... as` optional target bağlanmaz. Konteynerden elemana
 ve context sonucundan hedefe taint türetme semantiği ertelenmiştir; bu davranış
 bilinçli olarak testlerle korunur.
+
+## CLI ve Finding'in dosya alanı
+
+### Kuralların pakete taşınması
+
+`rules/` repo kökünde kaldığında `pyproject.toml` yalnızca `src/` paketlerini
+kurduğu için kurulu `codexray` motoru kuralsız kalıyordu. İzole venv ölçümü bu
+durumu doğruladı: taşıma öncesi `from codexray.rules.sql_injection import ...`
+`ModuleNotFoundError` verdi; taşıma sonrası aynı import `ok` verdi. Kurallar
+`src/codexray/rules/` altına taşındı ve kayıt noktası olarak `ALL_RULES` eklendi.
+
+### Dosya konumu ve JSON sözleşmesi
+
+Bir `Finding` kendi kendine yetebilmesi için `filename` taşır; bu alan CLI ve
+gelecekteki M11 triage girdisi için gereklidir. `Finding.path` yeniden
+adlandırılmadı: bu alan `TaintState.path` ile aynı taint yolunu temsil eder ve
+simetri korunur. Dosya yolu ile taint yolu JSON şemasında ayrıştırılır:
+`file` dosya yoludur, `taint_path` ise `Finding.path` değeridir.
+
+CLI her dosya için ayrı analyzer kullanır, dosyaları sıralı tarar ve
+`SyntaxError` görülen dosyayı atlayıp stderr'e yazar. Exit kodları bulgu yoksa
+`0`, en az bir bulgu varsa `1`, kullanım veya eksik path hatasında `2`'dir;
+syntax hatası tek başına exit kodunu değiştirmez.
+
+### Açık borç
+
+CI `pip install .` çalıştırsa da testleri `pythonpath` ayarıyla kaynak
+ağacından import ettiği için kurulan paketi henüz sınamıyor. İzole venv
+doğrulaması bu CLI değişikliğinde elle yapıldı; CI'ın kurulu paketi test etmesi
+ayrı bir iş olarak bırakıldı.

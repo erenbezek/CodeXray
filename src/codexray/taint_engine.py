@@ -45,6 +45,7 @@ class Finding:
     message: str
     path: tuple[str, ...]
     lineno: int
+    filename: str | None = None
 
 
 def merge_states(*states: TaintState) -> TaintState:
@@ -82,6 +83,7 @@ class TaintAnalyzer(ast.NodeVisitor):
         self,
         rule_engine: RuleEngine,
         call_model_registry: CallModelRegistry | None = None,
+        filename: str | None = None,
     ):
         self.rule_engine = rule_engine
         self.call_model_registry = (
@@ -91,6 +93,7 @@ class TaintAnalyzer(ast.NodeVisitor):
         )
         self.env: dict[str, TaintState] = {}
         self.findings: list[Finding] = []
+        self.filename = filename
 
     # ---- statement seviyesi ----
 
@@ -456,5 +459,6 @@ class TaintAnalyzer(ast.NodeVisitor):
                         message=f"{state.source} kaynakli kullanici girdisi, sanitize edilmeden {qname} sink'ine ulasiyor",
                         path=state.path + (qname,),
                         lineno=node.lineno,
+                        filename=self.filename,
                     )
                 )

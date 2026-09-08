@@ -20,6 +20,11 @@
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
 | M6 | Path Manipulation | sırada |
+| CLI | Çalıştırılabilir tarayıcı | tamamlandı |
+| M6 | Path Manipulation | sırada |
+| M7 | Sensitive Data Exposure | M6'dan sonra |
+| M11a | Triage denemesi (küçük ölçek) | M7'den sonra |
+| M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
 
 Ölçümler (güncel). Sıra bu tablonun M5.9 öncesi halinden türetildi; o zaman
@@ -74,6 +79,8 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - Statement header slotları: `if`/`while` test, `for`/`async for` iter, `with`/`async with` context
 - `Await` expression propagation
 - `RestSelector` ile variadic CallModel argüman propagation (`os.path.join`, `format`)
+- Çalıştırılabilir CLI tarayıcısı (`codexray scan` ve `python -m codexray`)
+- Dosya konumlu `Finding` ve insan / JSON raporlama
 - Receiver analizi (`Response(v).upper()` içindeki sink görünür)
 - Receiver propagation (`v.upper()`, `request.args.get('q')`, metot zincirleri)
 - Her çağrı argümanı ve receiver'ı **tam olarak bir kez** analiz edilir
@@ -83,7 +90,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-192 passed
+201 passed
 
 ## Current SQL Injection Flow
 
@@ -188,7 +195,6 @@ Contains vulnerable and safe example Python code.
 
 ## Not Implemented Yet
 
-- CLI scanner
 - Path Manipulation
 - Sensitive Data Exposure
 - AST structural rules

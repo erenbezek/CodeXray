@@ -3,6 +3,9 @@
 ## Uçtan uca akış
 
 ```
+CLI scanner (`codexray scan <path>`)
+       |
+       v
 Hedef kod deposu
        |
        v
@@ -16,7 +19,7 @@ Kural motoru (RuleEngine + codexray/rules/)
 LLM triage (bonus, opsiyonel)
        |
        v
-Rapor ve CI çıktısı (CLI, HTML, GitHub Actions)
+Rapor ve CI çıktısı (insan metni / JSON, GitHub Actions)
 ```
 
 ## Kural motorunun iç yapısı
@@ -50,6 +53,11 @@ TaintState (immutable):
 (`request.args → username → query → cursor.execute`). `sanitized_for`
 bir SQL sanitizer'ının HTML sink'i için otomatik güvenli sayılmamasını
 sağlıyor.
+
+`Finding` ayrıca `filename` taşır; böylece CLI bulgusu kendi başına dosya ve
+satır konumunu bildirir. JSON raporunda dosya `file`, satır `line`, taint izi
+ise `taint_path` anahtarlarıyla açıkça ayrılır. Bu şema M11 triage katmanının
+girdisi olarak korunacaktır.
 
 ## Kural şeması
 
