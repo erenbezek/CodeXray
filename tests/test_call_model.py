@@ -12,7 +12,7 @@ from codexray.rule_model import (
     SourcePattern,
 )
 from codexray.taint_engine import TaintAnalyzer
-from rules.xss import XSS_RULE
+from codexray.rules.xss import XSS_RULE
 
 
 def _rule() -> Rule:

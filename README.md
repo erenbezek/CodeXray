@@ -31,7 +31,7 @@ reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
 ## Neden bu proje
 
 Amaç terimleri ezberlemek değil, tespit eden bir sistem kurmak. Mimari
-bilerek modüler: yeni bir zafiyet kategorisi eklemek `rules/` altına
+bilerek modüler: yeni bir zafiyet kategorisi eklemek `codexray/rules/` altına
 yeni bir dosya eklemek demek, çekirdek motora (`src/codexray/`)
 dokunmadan.
 
@@ -41,6 +41,26 @@ dokunmadan.
 pip install -e .
 pip install pytest
 ```
+
+## CLI tarayıcı
+
+Kurulumdan sonra bir dosyayı veya dizini tarayabilirsiniz:
+
+```bash
+codexray scan examples/vulnerable/sql_injection.py
+python -m codexray scan examples/vulnerable/sql_injection.py
+```
+
+Örnek çıktı:
+
+```text
+examples/vulnerable/sql_injection.py:4  CRITICAL  sql-injection  CWE-89
+    request.args -> username -> query -> cursor.execute
+    request.args kaynakli kullanici girdisi, sanitize edilmeden cursor.execute sink'ine ulasiyor
+1 bulgu / 1 dosya tarandı
+```
+
+Makine tarafından işlenecek çıktı için `--json` seçeneğini kullanın.
 
 ## Test
 

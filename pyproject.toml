@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Taint-tracking tabanli, modular bir statik guvenlik tarama araci (staj projesi)."
 requires-python = ">=3.11"
 
+[project.scripts]
+codexray = "codexray.cli:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -12,6 +15,6 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.pytest.ini_options]
-# src/ (codexray paketi) ve repo kökü (rules/ paketi) otomatik path'e
-# eklenir -- "git clone && pytest" pip install gerektirmeden çalışsın diye.
-pythonpath = ["src", "."]
+# src/ (codexray paketi) otomatik path'e eklenir -- "git clone && pytest"
+# pip install gerektirmeden çalışsın diye.
+pythonpath = ["src"]

@@ -4,7 +4,7 @@ import pytest
 
 from codexray.rule_model import RuleEngine
 from codexray.taint_engine import TaintAnalyzer
-from rules.xss import XSS_RULE
+from codexray.rules.xss import XSS_RULE
 
 
 def _analyze(code: str) -> TaintAnalyzer:
