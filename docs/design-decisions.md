@@ -1060,6 +1060,82 @@ sink'i için `rule_model.py` değiştirilmemiştir.
 ertelenmiştir. `startswith` ile yapılan confinement kontrolü de control-flow
 analysis gerektirdiği için modellenmez ve ilgili kod false positive üretebilir.
 
+## Kural izolasyonu
+
+M7 öncesinde `TaintState.kind` taşınıyor olsa da `_check_sinks()` bu alanı
+kontrol etmiyordu. Bu, ilk üç kural aynı `kind="user-input"` source ailesini
+paylaştığı için o zamana kadar doğru görünen bir no-op'tu. İkinci source ailesi
+gelince dört çapraz tetikleme ölçüldü: `os.environ['SECRET']` SQL sink'inde,
+HTTP yanıtında ve `open` sink'inde; `request.args['q']` ise Sensitive Data
+Exposure'ın `print` sink'inde bulgu üretiyordu.
+
+Çözüm yeni bir kavram değildir: `Rule`, source + sanitizer + sink'i tutarlı bir
+birim olarak paketler ve doğal sözleşme "benim source kind'ımdan benim sink'ime"
+okumasıdır. Generic motor, sink değerlendirmesinde state'in `kind` değerini
+rule'un source kind kümesiyle karşılaştırır. Bu kural-özel mantık değildir;
+`kind`, `TaintState`'in generic alanıdır ve kontrolde `sql`, `execute` veya
+`path` gibi zafiyete özgü string'ler yoktur.
+
+`SinkPattern.accepts_kinds` alanı reddedildi. Bugün bir sink'in birden fazla
+source ailesini kabul etmesini gerektiren vaka yoktur; mevcut kuralların her
+birini güncellemek M7'yi saf ekleme olmaktan çıkarırdı. İleride gerçek bir
+istisna çıkarsa bu alan bir override olarak ayrıca tasarlanabilir.
+
+`kind=None` taşıyan tainted state'ler filtrelenmez. Böylece bugün oluşmayan
+ama modelin izin verdiği source'suz taint state'leri sessizce kaybolmaz.
+
+## M7 — Sensitive Data Exposure
+
+M7'nin taint yönü önceki kategorilerden farklıdır: güvenilmeyen input'tan
+tehlikeli işleme değil, güvenilen ama hassas veriden görünür yere akış aranır.
+Bu nedenle `FLASK_REQUEST_INPUT` paylaşılmaz; `kind="sensitive"` taşıyan ayrı
+bir `secret-value` source pattern'i kullanılır. `request.form["password"]`
+source yapılmadı: qualified-name çözümleyici subscript anahtarını atar ve
+`request.form`'u geniş biçimde eşleştirerek source ailelerini kural sırasına
+bağımlı hale getirirdi.
+
+Kaynakların iki grubu vardır. Attribute-şekilli hedefler `password`, `secret`,
+`api_key`, `token`, `api_token`, `private_key`, `SECRET_KEY` ve
+`DATABASE_PASSWORD` gibi suffix eşleşen adlardır. Çağrı/subscript şekilli
+hedefler `os.environ`, `os.getenv` ve doğrudan `getpass.getpass`'tır. `os.environ`
+bilinçli olarak geniştir; `os.environ['PATH']` de aynı qualified-name'e
+çözülür.
+
+Konsol/log sink'leri `print` ve logging seviyeleridir. HTTP sink'leri
+`Response` ile `make_response`'dur ve `parameter(0, "response")` ile iki
+pozisyonel/keyword yazımı kapsanır. `Response` XSS kuralında da sink'tir;
+kind izolasyonu sayesinde `os.environ['SECRET']` Sensitive Data Exposure,
+`request.args['q']` ise XSS olarak raporlanır.
+
+Bu kuralda sanitizer yoktur. Hash, masking veya truncation bir sırrı ortadan
+kaldırmaz; başka biçimde ifşa etmeye devam eder. Modellenmemiş bir redaction
+helper'ı ise mevcut bilinmeyen çağrı politikası nedeniyle taint'i zaten
+temizler ve `print(redact(secret))` bugün 0 bulgu verir.
+
+### Geniş environment kaynağı ve M11 bağımlılığı
+
+`os.environ`'ın geniş eşleşmesi yanlış pozitif maliyeti taşır; `PATH` gibi
+değerler de bulgu üretir. Bu tercih başka araçlara analojiyle değil, CodeXray'in
+kendi mimarisiyle gerekçelidir: `project-context.md` ilk günden yanlış
+pozitifleri azaltmak ve bulguları insan diline çevirmek için LLM triage katmanı
+tasarlamıştır. Tespitte yüksek duyarlılık, triage'da hassasiyet bilinçli ve
+tutarlı bir ayrımdır.
+
+Bunun bir bağımlılık maliyeti vardır: M11 roadmap'in sonunda olduğu için
+yapılmazsa geniş environment bulguları ham sevk edilir. M7'nin pratik
+hassasiyeti triage'ın gerçekten uygulanmasına bağlıdır; bu da M11'i yukarı
+çekme gerekçesini güçlendirir.
+
+### Maliyetin çıktı tarafında ayrıştırılması
+
+Maliyet sanıldığından düşüktür: `Finding.path[0]` kaynağı adlandırır. Ölçülen
+`os.environ -> s -> print` ile `settings.SECRET_KEY -> s -> print` yolları,
+geniş environment bulgularını isim-spesifik bulgulardan çıktı tarafında ayırır.
+Bu ayrım için yeni bir Finding veya JSON şeması alanı gerekmez. Severity'yi
+source'a göre ayırma alternatifi elendi; `severity` Rule seviyesindedir ve
+SourcePattern'a taşımak iki ayrı Rule ile sink setlerini çoğaltarak source
+seti sorununu yeniden üretirdi.
+
 ## CLI ve Finding'in dosya alanı
 
 ### Kuralların pakete taşınması
@@ -1089,3 +1165,183 @@ CI `pip install .` çalıştırsa da testleri `pythonpath` ayarıyla kaynak
 ağacından import ettiği için kurulan paketi henüz sınamıyor. İzole venv
 doğrulaması bu CLI değişikliğinde elle yapıldı; CI'ın kurulu paketi test etmesi
 ayrı bir iş olarak bırakıldı.
+
+
+## Bulgu mesajı motordan çıkarıldı
+
+### Kök neden
+
+`_check_sinks` her bulgu için sabit bir cümle kuruyordu:
+
+    "{source} kaynakli kullanici girdisi, sanitize edilmeden {sink}'ine ulasiyor"
+
+M7'ye kadar bu doğruydu; üç kuralın da kaynağı gerçekten kullanıcı girdisiydi
+ve üçünün de `requires_sanitization_for`'u doluydu. M7 ikinci source ailesini
+(`kind="sensitive"`) getirince cümle yalan söylemeye başladı: `os.environ`
+kullanıcı girdisi değil, ve M7'nin sanitizer'ı yok.
+
+Bu, kural izolasyonu sorununun **birebir aynı şekli**: tek source ailesi
+varken doğru olan bir varsayım, ikinci aile gelince kırıldı.
+
+### Elenen üç seçenek
+
+Kural başına mesaj şablonu alanı, `kind`'ı cümleye gömmek, ve nötr bir cümle
+kurmak. Üçü de aynı soruyu soruyordu: *motor cümleyi nasıl kursun.* Asıl soru
+**motor neden cümle kuruyor** idi.
+
+### Karar
+
+`Finding.message: str` kaldırıldı, yerine `Finding.kind: str | None` geldi.
+Alan sayısı aynı, `_check_sinks`'te tek değişiklik: `kind=state.kind`.
+
+Cümledeki her olgu zaten `Finding`'de vardı, biri hariç:
+
+| Cümle parçası | Nerede |
+|---|---|
+| kaynak | `path[0]` |
+| "kullanıcı girdisi" | hiçbir yerde — sabit kodlanmıştı |
+| "sanitize edilmeden" | bulgunun var olması zaten ima ediyor |
+| sink | `path[-1]` |
+
+Yani nesir tek bir olgu taşıyordu: kaynağın ailesi. O artık `kind` olarak
+yapısal biçimde duruyor.
+
+Nesir sunum katmanına taşındı; CLI zaten vardı. İnsan çıktısı üç satırdan
+ikiye indi ve `kind` başlık satırında etiket olarak görünüyor:
+
+    sensitive_data.py:5  MEDIUM  sensitive-data-exposure  CWE-200  [sensitive]
+        os.environ -> secret -> print
+
+Kaldırılan üçüncü satır zaten üstündeki `path` satırının nesir hâliydi.
+
+### Neden bu mimariyi hizalıyor
+
+`project-context.md` ilk günden LLM triage katmanını "yanlış pozitifleri
+azaltan, **insan diline çeviren**" katman olarak tanımladı. İnsan diline
+çevirmek tasarım gereği M11'in işi; motorun kendi cümlesini kurması o katmanın
+işine el atmaktı. Ayrım artık net: **motor olgu üretir, triage ifade eder.**
+Yapısal veri M11 için hazır bir cümleden daha iyi girdi.
+
+### Neden M7 ile aynı PR'da
+
+`cli.py` main'de olduğu için JSON sözleşmesi yayınlanmış durumda ve
+`"message"` → `"kind"` onu değiştiriyor; ayrı görünürlük hak ediyor — ama
+ayrı **commit** olarak, ayrı PR olarak değil.
+
+Belirleyici gerekçe: **bugün main yalan söylemiyor.** Yalanı M7'nin kendisi
+yaratıyor. Düzeltme M7'den sonra ayrı bir PR olarak gelseydi, iki merge
+arasındaki sürede main yanlış sınıflandırma üretirdi. Bir güvenlik aracının
+tek bir merge döngüsü boyunca bile yanlış ifade üretmesi kabul edilmemeli.
+
+### Ölçüm
+
+Değişiklikten önce `message`'a bakan **sıfır** test vardı ve alan yalnızca
+`cli.py`'de iki yerde tüketiliyordu. Bu, değişikliği ucuz kıldı — ama aynı
+zamanda alanın hiç doğrulanmadığını gösteriyordu. `kind` aynı durumda
+bırakılmadı: üç yeni test ve üç mutasyon eklendi.
+
+## Kural izolasyonunun karışık kaynak regresyonu ve düzeltmesi
+
+### Regresyon
+
+İzolasyon eklendikten sonra ölçüldü. `TaintState` tek bir `kind` taşıyordu ve
+`merge_states()` onu **ilk tainted parçadan** alıyordu (tek kaynak provenance).
+İzolasyon kapısı o tekil değere baktığı için, karışık kaynaklı bir değerde bir
+aile sessizce düşüyordu — ve sonuç **operand sırasına** bağlıydı:
+
+    u = request.args['q']; t = os.environ['TOKEN']
+
+    w = u + t   -> kind='user-input'  -> print(w)           0 bulgu  (sir kaciyor)
+    w = t + u   -> kind='sensitive'   -> cursor.execute(w)  0 bulgu  (SQLi kaciyor)
+
+Gerçekçi kalıpta:
+
+    logging.info('user ' + u + ' token ' + t)   ->  0 bulgu
+
+API token loglanıyor ve kaçırılıyordu, sırf kullanıcı operandı önce geldiği
+için.
+
+Bu, "dokümante edilmiş borç yüzeye çıktı" değil, **izolasyon değişikliğinin
+yarattığı bir regresyondu**: doğru karşılaştırma M7+izolasyon ile
+M7-izolasyonsuz arasındadır ve izolasyonsuz halde ikisi de raporlanıyordu.
+Sessiz ve operand sırasına bağlı bir false negative, bir güvenlik aracında
+sistematik false positive'den kötüdür. Bu nedenle sevk edilmedi, düzeltildi.
+
+### Karar: `kind` yerine `kinds`
+
+`TaintState.kind: str | None` **kaldırıldı**, yerine
+`TaintState.kinds: frozenset[str]` geldi.
+
+- Source kurulumu tek elemanlı bir küme üretir.
+- `merge_states()` katkıda bulunan tüm parçaların kümelerini **birleştirir**
+  (`sanitized_for`'un kesişim almasının tersi yönde: sanitization'da
+  muhafazakâr olan kesişim, provenance'ta ise birleşimdir).
+- `_check_sinks` kesişime bakar: `state.kinds & accepted_kinds` boş değilse
+  sink ateşlenir.
+- `Finding.kind` **eşleşen** kind'ı raporlar, bir "birincil" kind'ı değil.
+
+Tekil `kind` alanı bilinçli olarak geri getirilmedi. Bırakılsaydı ileride
+biri `state.kind == "sensitive"` yazabilirdi — tam da bu regresyonu yaratan
+sıra-bağımlı okuma. Bir test bu alanın yokluğunu sabitliyor.
+
+### Ölçüm
+
+Düzeltmeden sonra, her iki operand sırasında da:
+
+    w = u + t  ve  w = t + u   ->  print(w)           sensitive-data-exposure
+    w = u + t  ve  w = t + u   ->  cursor.execute(w)  sql-injection
+    logging.info('user ' + u + ' token ' + t)      ->  sensitive-data-exposure
+
+Karışık bir değer **her iki** ailenin sink'ini de ateşler; her bulgu kendi
+eşleşen kind'ıyla raporlanır. İzolasyonun kazanımları korunuyor: `os.environ`
+değeri `cursor.execute`/`open`'a, `request.args` değeri `print`'e hâlâ 0 bulgu
+veriyor. Kinds, CallModel, receiver, `os.path.join` ve f-string yollarından
+korunarak taşınıyor.
+
+### Kapsam dışı kalan
+
+Bu, `TaintState.source`'un hâlâ tek kaynak taşıması anlamına gelen genel
+multi-source provenance borcunu kapatmaz — yalnızca **sink kapısını besleyen**
+alanı çoğullaştırır. `source` raporlamada kullanılıyor ve bir kapı girdisi
+değil; çoğullaştırılması ayrı bir karardır.
+
+
+## M7'nin kaynak eşleştirmesi diğer kurallardan kategorik olarak farklı
+
+Bu bir iş maddesi değil, kayda geçirilmiş bir gözlem — dördüncü "tek aile
+varsayımı" sürprizini önlemek için.
+
+İlk üç kural belirli bir **API yolunu** hedefliyor:
+
+    CallTarget("request.args")     -> tam nitelikli ad
+
+M7 ise bir **isim sezgiseline** dayanıyor:
+
+    CallTarget("password")         -> ".password" ile biten HERHANGI bir ad
+
+Bu, projenin reddettiği regex'e dönüşmüyor — hâlâ ad tabanlı eşleştirme,
+desen değil. Ama hassasiyet profili farklı, ve bu farkın somut bir sonucu
+oldu: **büyük/küçük harf duyarlılığı SQL/XSS için doğru, M7 için sorun.**
+
+`request.args` tam olarak öyle yazılır. Ama Django ve Flask konfigürasyon
+sabitleri konvansiyon gereği büyük harflidir, dolayısıyla küçük harfli
+`password` / `token` hedefleri `settings.PASSWORD` ve `settings.API_TOKEN`
+gibi en yaygın biçimleri kaçırıyordu. Ölçüldü — kural ilk hâlinde:
+
+    settings.SECRET_KEY   -> bulundu
+    settings.API_TOKEN    -> KACIRILDI
+    settings.PASSWORD     -> KACIRILDI
+    config.SECRET         -> KACIRILDI
+
+Bugünün çözümü ucuz ve kural içeriğinde kaldı: büyük harfli varyantlar tek
+tek sayıldı (`PASSWORD`, `SECRET`, `API_KEY`, `TOKEN`, `API_TOKEN`,
+`PRIVATE_KEY`). M7'nin bütün değeri hassasiyetinde olduğu için kural ilk
+gününde amiral vakasını kaçırıyor olmamalıydı.
+
+Genel çözüm — bu source ailesi için büyük/küçük harf duyarsız eşleştirme —
+`matches_target()`'a dokunur ve **her kuralı** etkiler. Ayrı bir karar;
+burada alınmadı.
+
+Kapsamın genişlemediği de ölçüldü: `settings.DEBUG`, `config.TIMEOUT`,
+`settings.ALLOWED_HOSTS`, `user.name` ve `config.DATABASE_URL` hâlâ bulgu
+üretmiyor. Negatif testlerle sabitlendi.

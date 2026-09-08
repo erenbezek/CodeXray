@@ -68,7 +68,7 @@ def _finding_schema(finding: Finding) -> dict[str, object]:
         "rule_id": finding.rule_id,
         "cwe": finding.cwe,
         "severity": finding.severity,
-        "message": finding.message,
+        "kind": finding.kind,
         "taint_path": list(finding.path),
     }
 
@@ -77,12 +77,12 @@ def _print_human(
     findings: list[Finding], files_scanned: int, skipped_files: int
 ) -> None:
     for finding in findings:
+        kind = f"  [{finding.kind}]" if finding.kind else ""
         print(
             f"{finding.filename}:{finding.lineno}  "
-            f"{finding.severity}  {finding.rule_id}  {finding.cwe}"
+            f"{finding.severity}  {finding.rule_id}  {finding.cwe}{kind}"
         )
         print(f"    {' -> '.join(finding.path)}")
-        print(f"    {finding.message}")
 
     if findings:
         summary = f"{len(findings)} bulgu / {files_scanned} dosya tarandı"
