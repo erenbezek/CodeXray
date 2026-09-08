@@ -1,9 +1,15 @@
 """Command-line scanner for CodeXray.
 
-Syntax errors are reported per file and do not abort a directory scan.  They
-are counted in the summary, but do not change the exit status: the status is
-0 when no finding exists and 1 when at least one finding exists.  Exit status
-2 is reserved for command-line usage errors, including a missing path.
+A file that cannot be analyzed -- a syntax error, or a path that cannot be
+read at all -- is reported on stderr and skipped; a directory scan continues
+and keeps the findings collected so far.  Such files are counted in the
+summary but do not change the exit status: the status is 0 when no finding
+exists and 1 when at least one finding exists.  Exit status 2 is reserved for
+command-line usage errors, including a missing path.
+
+Source is handed to :func:`ast.parse` as bytes so that Python itself applies
+the file's coding declaration.  A ``# -*- coding: latin-1 -*-`` file and a
+UTF-8 file carrying a BOM are therefore analyzed rather than skipped.
 """
 
 from __future__ import annotations
@@ -38,11 +44,16 @@ def _files_to_scan(path: Path) -> list[Path] | None:
 
 def _scan_file(path: Path) -> tuple[list[Finding], bool]:
     try:
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
+        tree = ast.parse(path.read_bytes(), filename=str(path))
     except SyntaxError as error:
         line = error.lineno if error.lineno is not None else "?"
         print(f"{path}:{line}: syntax error: {error.msg}", file=sys.stderr)
+        return [], True
+    except (OSError, ValueError) as error:
+        # Unreadable path (a directory named `*.py`, a permission error) or a
+        # source `ast.parse` rejects outright.  One such file must not take the
+        # whole scan -- and the findings already collected -- down with it.
+        print(f"{path}: cannot be read: {error}", file=sys.stderr)
         return [], True
 
     analyzer = TaintAnalyzer(RuleEngine(list(ALL_RULES)), filename=str(path))

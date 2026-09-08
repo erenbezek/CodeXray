@@ -142,3 +142,67 @@ def test_directory_scan_order_is_deterministic(capsys, monkeypatch, tmp_path):
     assert first_output.index(str(tmp_path / "a.py")) < first_output.index(
         str(tmp_path / "z.py")
     )
+
+
+def test_latin1_source_with_coding_declaration_is_scanned(capsys, tmp_path):
+    """A coding declaration is Python's own contract; such a file is real
+    source, not an unreadable one, and must be analyzed rather than skipped."""
+    source = tmp_path / "latin1.py"
+    source.write_bytes(
+        b"# -*- coding: latin-1 -*-\n"
+        b'value = request.args["q"]\n'
+        b'Response(value + "\xe7\xf6\xfc")\n'
+    )
+
+    exit_code = main(["scan", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert str(source) in captured.out
+    assert "parse hatası" not in captured.out
+
+
+def test_utf8_bom_source_is_scanned(capsys, tmp_path):
+    source = tmp_path / "bom.py"
+    source.write_bytes(
+        b"\xef\xbb\xbf" b'value = request.args["q"]\n' b"Response(value)\n"
+    )
+
+    exit_code = main(["scan", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert str(source) in captured.out
+    assert "parse hatası" not in captured.out
+
+
+def test_unreadable_path_does_not_abort_the_scan(capsys, tmp_path):
+    """A directory named `*.py` is matched by rglob but cannot be read.  It
+    must not take the scan -- or the findings already collected -- down."""
+    (tmp_path / "01_unreadable.py").mkdir()
+    good = tmp_path / "02_good.py"
+    good.write_text(
+        'value = request.args["q"]\nResponse(value)\n', encoding="utf-8"
+    )
+
+    exit_code = main(["scan", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "cannot be read" in captured.err
+    assert str(good) in captured.out
+    assert "1 bulgu" in captured.out
+
+
+def test_unreadable_path_is_reported_in_json_summary(capsys, tmp_path):
+    (tmp_path / "01_unreadable.py").mkdir()
+    (tmp_path / "02_good.py").write_text(
+        'value = request.args["q"]\nResponse(value)\n', encoding="utf-8"
+    )
+
+    exit_code = main(["scan", str(tmp_path), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["summary"]["findings"] == 1
+    assert payload["summary"]["parse_errors"] == 1
