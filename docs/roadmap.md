@@ -34,22 +34,19 @@ M6  Path Manipulation                     <-- TAMAMLANDI
 M7  Sensitive Data Exposure               <-- TAMAMLANDI
      |   (ilk farkli source ailesi -- genellenebilirligin asil sinavi)
      |
-M11a Triage denemesi (kucuk olcek)        <-- next
-     |   (kategori sayisindan bagimsiz, yukari cekildi)
+GERCEK UYGULAMA TARAMASI              <-- next
+     |   (motor hic gercek kodda calistirilmadi -- en yuksek demo degeri)
      |
-M8d Ikinci kural sekli tasarim karari
-     |   (ast-structural + presence-check mevcut Rule semasina sigmiyor)
+M10 Bonus: dependency check               (pip-audit, DIS ARAC)
      |
-M8  AST-structural kurallar
-     |   (Empty Catch Block, Insecure Randomness, Hardcoded Password)
+KOD DONDU
+     |   README + kapsam kesintisi karari + demo ciktilari
      |
-M9  Presence-check (CSRF)
+M8  AST-structural kurallar               <-- KAPSAM DISI (karar kaydi)
+M9  Presence-check (CSRF)                 <-- KAPSAM DISI (karar kaydi)
+M11 Bonus: LLM triage katmani             <-- KAPSAM DISI (karar kaydi)
      |
-M10 Bonus: dependency check (pip-audit / OSV.dev)
-     |
-M11 Bonus: LLM triage katmani (tam)
-     |
-M12 CI entegrasyonu                      <-- .github/workflows/ci.yml ile TAMAMLANDI
+M12 CI entegrasyonu                       <-- .github/workflows/ci.yml ile TAMAMLANDI
 ```
 
 ## Neden bu sıra

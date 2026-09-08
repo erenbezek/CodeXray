@@ -1345,3 +1345,105 @@ burada alınmadı.
 Kapsamın genişlemediği de ölçüldü: `settings.DEBUG`, `config.TIMEOUT`,
 `settings.ALLOWED_HOSTS`, `user.name` ve `config.DATABASE_URL` hâlâ bulgu
 üretmiyor. Negatif testlerle sabitlendi.
+
+
+## M11 LLM triage — tasarlandı, bilinçli olarak kurulmadı
+
+Katmanın şekli tasarlandı ve maliyeti ölçüldü; kod yazılmadı. Bu kayıt,
+ileride kuracak kişinin tasarım aşamasını baştan yapmaması içindir.
+
+### Katmanın şekli
+
+    Finding (yapisal)  ->  TriageClient (protokol)  ->  Verdict (yapisal + insan cumlesi)
+                                ├── FakeTriage    (agsiz, testler icin)
+                                └── ClaudeTriage  (opsiyonel bagimlilik)
+
+Katmanın **değerli kısmı ağ gerektirmiyor**: protokol, `Verdict` tipi ve CLI
+entegrasyonu tamamen offline test edilebilir. Yalnızca gerçek istemci SDK ve
+kimlik bilgisi ister.
+
+`Finding` artık nesir taşımadığı için (bkz. "Bulgu mesajı motordan çıkarıldı")
+triage'ın girdisi hazır: yapısal olgu girer, yapısal verdict + bir insan
+cümlesi çıkar. Doğru teknik araç **structured outputs**
+(`output_config.format` / `messages.parse()`) — verdict şemayla doğrulanmış
+gelir, nesir ayrıştırmak gerekmez.
+
+**Sınır:** triage bulgu **üretemez**, yalnızca işaretler veya bastırır.
+`project-context.md`'nin "tespit motoru değil, sadece triage" kararı.
+
+### Çağrı deseni: tek çağrıda tüm bulgular
+
+Bir taramanın bütün bulguları tek istekte değerlendirilir. Daha ucuz, ve model
+bulguları birbirinin bağlamında görür — aynı dosyada tekrar eden bir kalıbı
+fark edebilir. Bulgu başına çağrı N kat pahalı ve çapraz bağlamı kaybediyor;
+büyük taramalarda gerekebilir, küçük ölçekte gereksiz.
+
+### Maliyet (ölçüldü)
+
+Bir tarama ≈ 1.1K girdi + 600 çıktı token. `claude-opus-5` ile
+(\$5 / \$25 per MTok) **tarama başına ~2 sent**.
+
+### Motive eden vaka (ölçüldü)
+
+`os.environ['PATH']` ile `os.environ['SECRET']` nitelikli-ad eşleştirmesiyle
+ayırt edilemiyor — `resolve_qualified_name` subscript anahtarını taşımıyor
+(bkz. M7 karar kaydı). Bir LLM bunu ayırt edebilir; eşleştirici edemez.
+M7'nin hassasiyeti bu katmanın varlığına bağlı olarak kayda geçmişti.
+
+### Neden kurulmadı
+
+**Ücretli bir katman istenmedi.** Ayrıca ortam ölçüldü: `ant` CLI kurulu
+değil, `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_PROFILE`
+üçü de unset, `~/.config/anthropic` yok, `anthropic` SDK kurulu değil. Yani
+hiçbir kimlik bilgisi yok.
+
+Bu koşulda `ClaudeTriage` **hiç çalıştırılamadan** sevk edilirdi. On
+milestone boyunca "ölçmeden iddia etme" disiplini uygulandı; doğrulanmamış
+bir ağ istemcisi bunun ihlali olurdu. Yalnızca `FakeTriage` ile sevk etmek de
+"triage denemesi" olmaktan çıkardı — sahte çıktı demo değildir.
+
+Proje ücretsiz ve bağımlılıksız kaldı. Katman, projenin modüler yapısı gereği
+zaman kalırsa çekirdeğe dokunmadan eklenebilir.
+
+## M8 / M9 kapsam kesintisi
+
+**AST-yapısal kurallar (M8) ve presence-check (M9) kapsam dışı bırakıldı.**
+
+### Gerekçe: ikinci ve üçüncü bir kural şekli, yani ayrı bir motor
+
+Mevcut `Rule` taint şeklidir: `sources` + `sanitizers` + `sinks`. M8 ve M9
+bu şemaya girmiyor:
+
+- **Empty Catch Block, Insecure Randomness, Hardcoded Password** yapısal AST
+  kontrolleridir — ne source'ları, ne sanitizer'ları, ne sink'leri var. Tek
+  düğüm/desen eşleştirmesi.
+- **CSRF** bir *yokluk* kontrolüdür — bir korumanın bulunmadığını arar.
+  Taint akışı yoktur, aranan şey bir akışın **olmaması** bile değil, bir
+  bildirimin eksikliğidir.
+
+Hardcoded password ayrıca taint olarak ifade **edilemiyor**: string
+literal'in nitelikli adı yok (ölçüldü: `"hunter2"` → `None`), dolayısıyla
+kural motoruna hiç ulaşmıyor.
+
+`architecture.md` üç motor tipini ve registry desenini ilk günden tanımlıyor;
+mimari niyet var. Ama bugüne kadar yalnızca **taint motoru** kuruldu. M8 ve
+M9 ikinci ve üçüncü motoru yazmayı gerektirir — kural eklemek değil, motor
+eklemek.
+
+### Neden kesildi
+
+Kalan sürede iki yeni motor yazmak, mevcut taint motorunun kalitesini
+düşürmeden mümkün değildi. Proje ilk günden "8 zafiyeti yüzeysel yakalayan
+araç değil, gerçek bir motor + o motorun genellenebilir olduğunu kanıtlayan
+birkaç kategori" hedefiyle kuruldu (`roadmap.md` → "Neden bu sıra"). Dört
+taint kategorisi ve motorun genellenebilirlik kanıtı teslim edildi; iki
+yarım motor eklemek o hedefin tersi olurdu.
+
+Yazılı bir kesinti mühendislik muhakemesidir; sessiz bir eksik teslim
+edilememedir. Bu kayıt kesintiyi açık hâle getirir.
+
+### Ne teslim edildi
+
+Taint gerektiren dört kategori: SQL Injection, XSS, Path Manipulation,
+Sensitive Data Exposure — sonuncusu farklı bir source ailesiyle, yani motorun
+yalnızca sink tarafında değil kaynak tarafında da genelleştiğinin kanıtıyla.

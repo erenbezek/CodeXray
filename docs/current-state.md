@@ -22,8 +22,10 @@ farklı source kind ailelerini de kural bazında izole ediyor. Sırayla:
 | CLI | Çalıştırılabilir tarayıcı | tamamlandı |
 | M6 | Path Manipulation | tamamlandı |
 | M7 | Sensitive Data Exposure | tamamlandı |
-| M11a | Triage denemesi (küçük ölçek) | sırada |
-| M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
+| — | Gerçek uygulama taraması | sırada |
+| M10 | Dependency check (pip-audit, dış araç) | taramadan sonra |
+| M8 / M9 | AST-yapısal + presence-check | **kapsam dışı** (karar kaydı) |
+| M11 | LLM triage katmanı | **kapsam dışı** (tasarlandı, kurulmadı) |
 | — | Literal receiver / shape-based matching | ertelendi |
 
 Sıranın gerekçesi ve kapının durma koşulu için `docs/roadmap.md` → "Dört
