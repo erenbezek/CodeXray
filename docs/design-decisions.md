@@ -1018,9 +1018,10 @@ M6, `Rule` şemasını değiştirmeden CWE-22 için üç dosya sink'i (`open`,
 `send_file`, `send_from_directory`) ve iki güvenli basename sanitizer'ı
 (`secure_filename`, `os.path.basename`) tanımlar. Sanitization bağlamı
 `"path"`'tir; SQL veya HTML bağlamları bu kural için geçerli değildir.
-`send_from_directory(directory, path, ...)` imzası nedeniyle yalnızca birinci
-pozisyonel argüman tehlikelidir ve named `path` ile aynı selector üzerinden
-çözülür.
+`send_from_directory(directory, path, ...)` imzasında kullanıcı kontrolündeki
+parametre `path`'tir, yani **1 indeksli** (ikinci) pozisyonel argüman; 0
+indeksli `directory` tehlikeli değildir. `parameter(1, "path")` her iki yazımı
+da tek selector'la çözer.
 
 ### `os.path.join` ve sanitization
 
