@@ -27,6 +27,8 @@ reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
   username → query → cursor.execute`) ile raporlanıyor.
 - **XSS (CWE-79)** için reflected/server-side taint tracking: Flask request
   input'ları → HTML text sanitizer → `Response`, `make_response` veya `Markup`.
+- **Path Manipulation (CWE-22)** için Flask request input'larının güvenli
+  basename sanitizer'ları olmadan dosya sink'lerine ulaşması.
 
 ## Neden bu proje
 

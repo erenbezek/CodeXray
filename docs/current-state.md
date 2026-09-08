@@ -2,8 +2,8 @@
 
 ## Current Milestone
 
-**Motor sağlamlaştırma tamamlandı.** Kategori #3'e (Path Manipulation) geçmeden
-önce taint motorundaki genel bilgi kayıpları kapatıldı. Sırayla:
+**M6 (Path Manipulation) tamamlandı.** Kategori #3'e geçmeden önce taint
+motorundaki genel bilgi kayıpları kapatıldı. Sırayla:
 
 | Adım | Ne yapıldı | Durum |
 |---|---|---|
@@ -20,8 +20,8 @@
 | M5.9 | Statement header slotları (`if`/`while` test, `for` iter, `with` context) | tamamlandı |
 | M5.10 | Variadic argument model (`os.path.join`, `tpl.format` — keyfi arity) | tamamlandı |
 | CLI | Çalıştırılabilir tarayıcı | tamamlandı |
-| M6 | Path Manipulation | sırada |
-| M7 | Sensitive Data Exposure | M6'dan sonra |
+| M6 | Path Manipulation | tamamlandı |
+| M7 | Sensitive Data Exposure | sırada |
 | M11a | Triage denemesi (küçük ölçek) | M7'den sonra |
 | M8d | İkinci kural şekli tasarım kararı | M11a'dan sonra |
 | — | Literal receiver / shape-based matching | ertelendi |
@@ -35,7 +35,7 @@ strateji kararı".
 | Kalıp | Bugün |
 |---|---|
 | `with Response(kirli):` (header slotu) | 1 bulgu |
-| `with open(kirli) as f:` | 0 bulgu — header slotu çalışıyor, `open` henüz sink değil (M6) |
+| `with open(kirli) as f:` | 1 bulgu — Path Manipulation sink'i |
 | `for row in cursor.execute(q):` | 1 bulgu |
 | `if` / `while cursor.execute(q):` | 1 bulgu |
 | `os.path.join("/base", kirli)` | 1 bulgu |
@@ -73,6 +73,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - CWE / severity metadata
 - SQL Injection rule
 - Reflected/server-side XSS rule (Python + Flask)
+- Path Manipulation rule (Python + Flask)
 - Generic `CallModel` / `CallModelRegistry` (explicit call-return propagation)
 - Shared call-argument binding (parametre başına tek selector, pozisyonel + keyword)
 - Statement kapsamı: `return`, `AugAssign`, `AnnAssign`, `raise`, `assert`
@@ -93,7 +94,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-207 passed
+245 passed
 
 ## Current SQL Injection Flow
 
@@ -179,6 +180,7 @@ Currently implemented:
 
 - SQL Injection
 - XSS (reflected/server-side)
+- Path Manipulation
 
 ### `src/codexray/rules/sources.py`
 
@@ -203,7 +205,6 @@ Contains vulnerable and safe example Python code.
 
 ## Not Implemented Yet
 
-- Path Manipulation
 - Sensitive Data Exposure
 - AST structural rules
 - Presence-check rules
