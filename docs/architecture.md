@@ -92,7 +92,8 @@ ast.Call
   ArgumentSelector            — bir selector = bir PARAMETRE
      ├── parameter(index, name)   — her iki yazım
      ├── positional(index)        — düz int de kabul edilir
-     └── keyword(name)
+     ├── keyword(name)
+     └── rest(from_index)         — kalan TÜM parametreler (yalnızca CallModel)
           |
           v
   CallModel / SinkPattern / SanitizerPattern
@@ -104,9 +105,22 @@ Böylece tuple uzunluğu seçilen parametre sayısına eşittir.
 
 Binder muhafazakârdır: çözülemeyen bir selector tahmin üretmez, hiçbir
 şeye bağlanmaz. `**kwargs` içeriği ve `*args` sonrası pozisyonlar
-bilinmezdir — ve bilinmeyen, tainted değildir. Gerekçe:
-`docs/design-decisions.md` → "Shared Call-Argument Binding" ve
-"Parameter Modeli".
+bilinmezdir — ve bilinmeyen, tainted değildir.
+
+`rest(from_index)` tek bir parametre değil, kalan **tüm** parametreleri
+adlandırır: `from_index`'ten itibaren görünür pozisyonel ifadelerin tamamı
+(`Starred` düğümünün kendisi dahil) artı tüm keyword değerleri (`**mapping`
+dahil). Bunların katkısına ilgili expression handler karar verir — bugün
+`_analyze_Starred` ve `_analyze_Dict` `CLEAN` döndüğü için `f(*parts)` ve
+`f(**{...})` taint taşımaz. Bir `Starred` `from_index`'ten önce duruyorsa
+indeks hassasiyeti gerçekten kaybolur ve hiçbir pozisyonel bağlanmaz.
+
+`rest()` çoklu bağlama yaptığı için yalnızca `bind_all()` ile kullanılır;
+`bind()`'a verilirse `TypeError` yükselir. Sink ve sanitizer katmanları tek
+parametre sözleşmesini korur.
+
+Gerekçe: `docs/design-decisions.md` → "Shared Call-Argument Binding",
+"Parameter Modeli" ve "M5.10 karar".
 
 ## Traversal sözleşmesi
 
@@ -134,9 +148,26 @@ için analiz edilir; `Dict` için key ve value birlikte taranır. `Starred`
 yielded expression, generator `iter` ve `if` slotlarını analiz eder.
 Konteyner-vs-eleman propagation ve for/with target binding ertelenmiştir.
 
-`If`, `While`, `For`, `With`, `Try` ve `FunctionDef` için özel visitor
-bulunmaz. `ast.NodeVisitor.generic_visit()` mevcut gövde traversal'ını korur;
-bu statement'lara eksik bir visitor eklemek gövdelerin atlanmasına yol açar.
+`If`, `While`, `For`, `AsyncFor`, `With` ve `AsyncWith` için visitor bulunur ve
+yalnızca **başlık ifadesini** analiz eder: `test`, `iter`, ve `items` içindeki
+her `context_expr`. Dönen state bağlanmaz — başlıkta duran sink görünür olsun
+diye analiz edilir. Her visitor sonunda `self.generic_visit(node)` çağırır;
+bu çağrı atlanırsa gövde hiç ziyaret edilmez ve mevcut sink tespiti bozulur.
+
+`generic_visit()` başlık ifadesine tekrar iner ama bu iniş inerttir —
+`ast.Call` gibi düğümler için `visit_X` yoktur, dolayısıyla
+`analyze_expression()` ikinci kez çağrılmaz ve başlık sink'i çift raporlanmaz.
+
+`Try` ve `FunctionDef` için visitor **yoktur**: analiz edilecek bir başlık
+ifadesi taşımazlar, gövdelerini `generic_visit()` zaten gezer.
+
+`for` target ve `with ... as` optional target **bağlanmaz** — konteynerden
+elemana taint türetme semantiği ertelenmiştir.
+
+`Await` bir expression handler'dir ve `node.value`'nun state'ini döndürür —
+bir coroutine'i beklemek onun sonucunu verir. Statement header slotlarından
+ayrı bir kök nedendir; async kapsamı aynı pakette (M5.9) açıldığı için birlikte
+kapatılmıştır.
 
 `return value` bir sink değildir. Her `Call` düğümünün receiver'ı
 (`node.func.value`) ve positional, keyword, `*args` ve `**kwargs` değerleri
