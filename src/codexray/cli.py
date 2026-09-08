@@ -74,7 +74,7 @@ def _finding_schema(finding: Finding) -> dict[str, object]:
 
 
 def _print_human(
-    findings: list[Finding], files_scanned: int, parse_errors: int
+    findings: list[Finding], files_scanned: int, skipped_files: int
 ) -> None:
     for finding in findings:
         print(
@@ -88,20 +88,20 @@ def _print_human(
         summary = f"{len(findings)} bulgu / {files_scanned} dosya tarandı"
     else:
         summary = f"Bulgu yok / {files_scanned} dosya tarandı"
-    if parse_errors:
-        summary += f" ({parse_errors} parse hatası)"
+    if skipped_files:
+        summary += f" ({skipped_files} dosya atlandı)"
     print(summary)
 
 
 def _print_json(
-    findings: list[Finding], files_scanned: int, parse_errors: int
+    findings: list[Finding], files_scanned: int, skipped_files: int
 ) -> None:
     payload = {
         "findings": [_finding_schema(finding) for finding in findings],
         "summary": {
             "files_scanned": files_scanned,
             "findings": len(findings),
-            "parse_errors": parse_errors,
+            "skipped_files": skipped_files,
         },
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -114,16 +114,16 @@ def _scan(path: Path, as_json: bool) -> int:
         return 2
 
     findings: list[Finding] = []
-    parse_errors = 0
+    skipped_files = 0
     for file_path in files:
-        file_findings, had_syntax_error = _scan_file(file_path)
+        file_findings, was_skipped = _scan_file(file_path)
         findings.extend(file_findings)
-        parse_errors += int(had_syntax_error)
+        skipped_files += int(was_skipped)
 
     if as_json:
-        _print_json(findings, len(files), parse_errors)
+        _print_json(findings, len(files), skipped_files)
     else:
-        _print_human(findings, len(files), parse_errors)
+        _print_human(findings, len(files), skipped_files)
     return 1 if findings else 0
 
 

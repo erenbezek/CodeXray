@@ -59,7 +59,7 @@ def test_json_output_has_explicit_file_and_taint_path_schema(capsys):
     assert payload["summary"] == {
         "files_scanned": 1,
         "findings": len(payload["findings"]),
-        "parse_errors": 0,
+        "skipped_files": 0,
     }
     finding = payload["findings"][0]
     assert finding["file"] == str(file_path)
@@ -115,7 +115,7 @@ def test_syntax_error_does_not_abort_other_files(capsys, tmp_path):
     assert exit_code == 1
     assert "syntax error" in captured.err
     assert str(good) in captured.out
-    assert "(1 parse hatası)" in captured.out
+    assert "(1 dosya atlandı)" in captured.out
 
 
 def test_directory_scan_order_is_deterministic(capsys, monkeypatch, tmp_path):
@@ -159,7 +159,7 @@ def test_latin1_source_with_coding_declaration_is_scanned(capsys, tmp_path):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert str(source) in captured.out
-    assert "parse hatası" not in captured.out
+    assert "dosya atlandı" not in captured.out
 
 
 def test_utf8_bom_source_is_scanned(capsys, tmp_path):
@@ -173,7 +173,7 @@ def test_utf8_bom_source_is_scanned(capsys, tmp_path):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert str(source) in captured.out
-    assert "parse hatası" not in captured.out
+    assert "dosya atlandı" not in captured.out
 
 
 def test_unreadable_path_does_not_abort_the_scan(capsys, tmp_path):
@@ -205,4 +205,4 @@ def test_unreadable_path_is_reported_in_json_summary(capsys, tmp_path):
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1
     assert payload["summary"]["findings"] == 1
-    assert payload["summary"]["parse_errors"] == 1
+    assert payload["summary"]["skipped_files"] == 1
