@@ -22,7 +22,7 @@ farklı source kind ailelerini de kural bazında izole ediyor. Sırayla:
 | CLI | Çalıştırılabilir tarayıcı | tamamlandı |
 | M6 | Path Manipulation | tamamlandı |
 | M7 | Sensitive Data Exposure | tamamlandı |
-| — | Gerçek uygulama taraması | sırada |
+| — | Gerçek uygulama taraması | tamamlandı |
 | M10 | Dependency check (pip-audit, dış araç) | taramadan sonra |
 | M8 / M9 | AST-yapısal + presence-check | **kapsam dışı** (karar kaydı) |
 | M11 | LLM triage katmanı | **kapsam dışı** (tasarlandı, kurulmadı) |
