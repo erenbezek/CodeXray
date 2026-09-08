@@ -449,7 +449,11 @@ class TaintAnalyzer(ast.NodeVisitor):
                 state = argument_states[argument]
                 if not state.tainted:
                     continue
-                if state.kind is not None and state.kind not in accepted_kinds: continue
+                # Bir sink yalnizca KENDI kuralinin bildirdigi source
+                # kind'lari icin ateslenir -- kurallar birbirinin kaynagini
+                # tetiklemez.
+                if state.kind is not None and state.kind not in accepted_kinds:
+                    continue
                 if required and required.issubset(set(state.sanitized_for)):
                     continue
 
