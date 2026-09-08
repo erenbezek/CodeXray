@@ -1012,6 +1012,53 @@ Değişiklik M6'dan önce ve ayrı yapıldı: M6'nın diff'i yeni kategorinin sa
 eklenmesi olarak kalmalı ve bu değişikliğin yayınlanmış SQL Injection
 davranışını genişletmesi ayrı, bisect edilebilir bir diff olmalıdır.
 
+## M6 — Path Manipulation
+
+M6, `Rule` şemasını değiştirmeden CWE-22 için üç dosya sink'i (`open`,
+`send_file`, `send_from_directory`) ve iki güvenli basename sanitizer'ı
+(`secure_filename`, `os.path.basename`) tanımlar. Sanitization bağlamı
+`"path"`'tir; SQL veya HTML bağlamları bu kural için geçerli değildir.
+`send_from_directory(directory, path, ...)` imzası nedeniyle yalnızca birinci
+pozisyonel argüman tehlikelidir ve named `path` ile aynı selector üzerinden
+çözülür.
+
+### `os.path.join` ve sanitization
+
+`os.path.join` nötr bir ayraç ekleyici değildir. Ölçüm:
+
+```text
+posixpath.join('/uploads', '/etc/passwd') = '/etc/passwd'
+```
+
+Mutlak bileşen önceki prefix'i sildiği için ham bir bileşen join'den sonra
+sink'e ulaştığında zafiyet oluşturabilir. Buna rağmen `os.path.join` güvenli
+basename sanitizer'ının işaretini korur; garanti join'den değil,
+`secure_filename` ve `os.path.basename` çıktılarının mutlak yol veya ayraç
+üretmemesinden gelir. Gelecekte eklenecek her sanitizer için kontrol kuralı
+şudur: garantisi `os.path.join`'in prefix-silme davranışından sağ çıkıyor mu?
+
+`Path` aynı nedenle taint ve sanitization koruyan bir `CallModel` ile modellenir.
+`Path('/uploads', '/etc/passwd')` mutlak bileşen davranışını taşır; `/`
+operatörü ise mevcut `BinOp` ve `merge_states()` akışıyla analiz edilir.
+`format` bu karardan etkilenmez ve sanitization'ı sıfırlamaya devam eder; HTML
+text değerini template'in yeni bağlamına taşımak güvenlik bağlamını korumaz.
+
+### Bilinçli sınırlar
+
+`normpath`, `abspath` ve `realpath` sanitizer değildir. Ölçümde
+`normpath('../../etc/passwd')` hâlâ `'../../etc/passwd'`,
+`join('/up', normpath('../../etc/passwd'))` ise confinement sağlamayan bir
+sonuç üretir. Benzer şekilde `os.path.basename('..')` `'..'` döndürür; en kötü
+durumda `base/..` bir dizini adlandırır, güvenli bir dosya adı garantisi vermez.
+
+`Path(kirli).read_text()` 0 bulgu verir. `SinkPattern` receiver desteği
+taşımadığı için bu boşluk ayrı bir tasarım kararına bırakılmıştır; receiver
+sink'i için `rule_model.py` değiştirilmemiştir.
+
+`os.remove`, `os.unlink`, `os.rename`, `shutil` ve arşiv çıkarma sink'leri
+ertelenmiştir. `startswith` ile yapılan confinement kontrolü de control-flow
+analysis gerektirdiği için modellenmez ve ilgili kod false positive üretebilir.
+
 ## CLI ve Finding'in dosya alanı
 
 ### Kuralların pakete taşınması

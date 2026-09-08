@@ -26,6 +26,7 @@ Current working vulnerability rules:
 
 - SQL Injection
 - Reflected/server-side XSS
+- Path Manipulation
 
 Do not introduce inter-procedural analysis, control-flow analysis, type inference, or other major scope expansions unless explicitly requested.
 
