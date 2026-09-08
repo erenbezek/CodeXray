@@ -303,6 +303,54 @@ def test_format_resets_sanitization_before_xss_sink():
     assert len(analyzer.findings) == 1
 
 
+def test_os_path_join_preserves_sanitization_for_xss_sink():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "safe = html.escape(value)\n"
+        "result = os.path.join('/a', safe)\n"
+        "Response(result)\n"
+    )
+
+    assert analyzer.env["result"].tainted
+    assert analyzer.env["result"].sanitized_for == ("html-text",)
+    assert analyzer.findings == []
+
+
+def test_os_path_join_still_propagates_unsanitized_taint():
+    analyzer = _analyze_xss(
+        "value = request.args['q']\n"
+        "result = os.path.join('/a', value)\n"
+        "Response(result)\n"
+    )
+
+    assert analyzer.env["result"].tainted
+    assert analyzer.findings
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_tainted"),
+    [
+        ("Path(value)", True),
+        ("Path('/b', value)", True),
+        ("Path('sabit')", False),
+    ],
+)
+def test_path_model_propagates_taint_and_sanitization(
+    expression: str, expected_tainted: bool
+):
+    analyzer = _analyze(
+        "value = request.args['q']\n"
+        f"result = {expression}\n"
+        "sink(result)\n"
+    )
+
+    assert analyzer.env["result"].tainted is expected_tainted
+    if expected_tainted:
+        assert len(analyzer.findings) == 1
+    else:
+        assert analyzer.findings == []
+
+
 def test_format_tainted_request_json_mapping_reaches_response_sink():
     analyzer = _analyze_xss(
         "template = 'clean'\n"

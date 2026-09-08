@@ -83,7 +83,13 @@ DEFAULT_CALL_MODELS: tuple[CallModel, ...] = (
         target=CallTarget(qualified_name="os.path.join"),
         input_selectors=(rest(0),),
         preserves_taint=True,
-        preserves_sanitization=False,
+        preserves_sanitization=True,
+    ),
+    CallModel(
+        target=CallTarget(qualified_name="Path"),
+        input_selectors=(rest(0),),
+        preserves_taint=True,
+        preserves_sanitization=True,
     ),
     CallModel(
         target=CallTarget(qualified_name="format"),
