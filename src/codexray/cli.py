@@ -239,7 +239,11 @@ def _force_utf8_output() -> None:
     cp1252 and cp437 crashed.
 
     UTF-8 is correct in a redirected file, which is where CI reads it.
-    `errors="replace"` is the floor: degraded output beats a traceback.
+    `errors="replace"` is defense only and is not reachable through this
+    path -- UTF-8 encodes every character the report can contain, so nothing
+    is ever replaced. It is left in so a future stream that cannot be given
+    UTF-8 degrades instead of raising. A mutation flipping it to "strict"
+    survives the suite, which is expected rather than a coverage gap.
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)

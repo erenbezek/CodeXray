@@ -1680,9 +1680,50 @@ yani iddia belgenin kendi içeriğiyle çelişiyordu.
 
 Birincisi ölçülmüş bir mimari sınır; diğeri ölçülmemiş bir slogandı.
 
-## `--no-deps` gerekçesi eskidi
+## `--no-deps` gerekçesi iki kez yanlıştı
 
-Kayıt "çıplak `-r` eski paketleri derlemeye çalışıp patlıyor" diyordu.
+İlk kayıt "çıplak `-r` eski paketleri derlemeye çalışıp patlıyor" diyordu.
 `pip-audit 2.10.1` ile ikisi de çalıştırıldı: ikisi de exit 1, ikisi de
-6 paket / 10 zafiyet. Bayrak çözümlemeyi dosyada sabitlenene yakın tuttuğu
-için korunuyor, ama gerekçe artık gösterilemiyor ve öyle yazıldı.
+6 paket / 10 zafiyet. Gerekçe gösterilemiyordu.
+
+Yerine yazılan ikinci gerekçe — "bayrak çözümlemeyi dosyada sabitlenene
+yakın tutuyor" — bağımsız incelemede **o da yanlış** çıktı. Paket listesi
+iki türlü de ölçüldü:
+
+    --no-deps ILE : click 8.5.0, flask 0.12.2, itsdangerous 2.2.0,
+                    jinja2 2.10, markupsafe 3.0.3, werkzeug 3.1.8
+    --no-deps'SIZ : ayni alti paket
+    dosyada       : yalnizca flask 0.12.2 ve jinja2 2.10
+
+Bayrak açıkken de dosyada sabitlenmemiş dört paket çözülüyor. Yani bayrağın
+bu girdide **ölçülebilir hiçbir etkisi yok** ve paragrafın kendi ikinci
+yarısı ("bayraksız çalışma aynı sonucu veriyor") zaten bunu söylüyordu —
+cümle kendisiyle çelişiyordu.
+
+Üçüncü ve son hâli hiçbir şey iddia etmiyor: bayrak veriliyor, belgelenmiş
+amacı bağımlılık çözümlemesini atlamak, ve bu girdide ölçülebilir etkisi
+yok. Ne koruduğuna dair gösterilemeyen bir iddia kalmadı.
+
+**Süreç notu.** Aynı satır iki kez yanlış gerekçelendirildi. İkisinde de
+hata aynıydı: bayrağın *neden orada olduğu* ölçülmeden yazıldı. Bir
+uygulama detayının gerekçesi de, bir sıralama gerekçesi gibi, sunulmadan
+önce ölçülmelidir.
+
+## Ölçülen satır sayıları kesinleştirildi
+
+"25 satır" ve "7 satır" yalnızca eklemeleri sayıyordu. Kesin hâli:
+
+    M6 Path Manipulation    taint_engine.py    0        call_model.py  +7 / -1
+    M7 Sensitive Data       taint_engine.py  +25 / -6   cli.py         +3
+
+Değişikliğin bedelini konuşurken silinen satırları da göstermek, maliyeti
+eksik göstermemek demektir.
+
+## `errors="replace"` bilerek kapsanmıyor
+
+Konsol encoding düzeltmesinde `reconfigure(encoding="utf-8",
+errors="replace")` kullanılıyor. Bağımsız incelemede `errors` değerini
+`"strict"` yapan mutasyonun **hayatta kaldığı** ölçüldü — ve bu doğru:
+UTF-8 raporun içerebileceği her karakteri kodladığı için `replace` yolu
+hiç çalışmıyor. Savunma katmanı olarak duruyor, kapsanmadığı biliniyor ve
+bu bir kapsama boşluğu değil beklenen sonuç.

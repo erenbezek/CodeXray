@@ -21,12 +21,12 @@ gerçek kod üzerinde denendi.
 Mimarinin maliyeti ölçüldü ve sınırı nettir. **Mevcut bir kaynak ailesi
 içinde** yeni kategori eklemek çekirdeğe hiç dokunmuyor: Path Manipulation
 `taint_engine.py`'de **sıfır satır** değiştirdi; genişleme yalnızca kurala
-özgü olmayan veri-akışı katmanında (`call_model.py`, 7 satır) oldu.
+özgü olmayan veri-akışı katmanında (`call_model.py`, +7 / −1) oldu.
 
 **Yeni bir kaynak ailesi** eklemek ise bedelli: Sensitive Data Exposure
-`taint_engine.py`'de **25 satıra** mal oldu, çünkü kuralların birbirinin
-sink'ini tetiklediği ortaya çıktı ve motora kural izolasyonu eklemek
-gerekti. Neyi zorladığı adım adım kayıtlı.
+`taint_engine.py`'de **+25 / −6 satıra** mal oldu (artı `cli.py`'de 3),
+çünkü kuralların birbirinin sink'ini tetiklediği ortaya çıktı ve motora
+kural izolasyonu eklemek gerekti. Neyi zorladığı adım adım kayıtlı.
 
 Yani mimari kategori eklemeye açık, kaynak ailesi eklemeye kısmen açık —
 ölçülmüş bir sınır, slogan değil.
@@ -137,10 +137,11 @@ Rapor edilen paket sayısı dosyadaki satır sayısından fazla olabilir:
 açılır. Zafiyet sayısı da zafiyet veritabanı büyüdükçe artar.
 
 `pip-audit` **runtime bağımlılığı değildir** — CLI onu `sys.executable -m
-pip_audit` ile dış araç olarak çağırır. `--no-deps` bayrağı çözümlemeyi
-dosyada sabitlenene yakın tutmak için veriliyor; `pip-audit 2.10.1` ile
-bayraksız çalışma da ölçüldü ve aynı sonucu veriyor. Araç kurulu değilse
-CLI çökmez, ne yapılacağını söyler ve `2` ile çıkar:
+pip_audit` ile dış araç olarak çağırır. `--no-deps` bayrağı da veriliyor;
+belgelenmiş amacı bağımlılık çözümlemesini atlamak, ancak bu girdide
+**ölçülebilir bir etkisi yok**: bayraklı ve bayraksız çalışma aynı altı
+paketi ve aynı on advisory'yi döndürüyor. Araç kurulu değilse CLI çökmez,
+ne yapılacağını söyler ve `2` ile çıkar:
 
 ```text
 codexray audit: pip-audit kurulu değil. Kurmak için: python -m pip install pip-audit
