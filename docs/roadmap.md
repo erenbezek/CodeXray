@@ -40,11 +40,11 @@ GERCEK UYGULAMA TARAMASI              <-- next
 M10 Bonus: dependency check               (pip-audit, DIS ARAC)
      |
 KOD DONDU
-     |   README + kapsam kesintisi karari + demo ciktilari
+     |   README + erteleme kararlari + demo ciktilari
      |
-M8  AST-structural kurallar               <-- KAPSAM DISI (karar kaydi)
-M9  Presence-check (CSRF)                 <-- KAPSAM DISI (karar kaydi)
-M11 Bonus: LLM triage katmani             <-- KAPSAM DISI (karar kaydi)
+M8  AST-structural kurallar               <-- ERTELENDI (karar kaydi)
+M9  Presence-check (CSRF)                 <-- ERTELENDI (karar kaydi)
+M11 Bonus: LLM triage katmani             <-- ERTELENDI (tasarlandi)
      |
 M12 CI entegrasyonu                       <-- .github/workflows/ci.yml ile TAMAMLANDI
 ```

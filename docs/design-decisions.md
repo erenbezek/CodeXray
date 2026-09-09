@@ -1402,12 +1402,18 @@ milestone boyunca "ölçmeden iddia etme" disiplini uygulandı; doğrulanmamış
 bir ağ istemcisi bunun ihlali olurdu. Yalnızca `FakeTriage` ile sevk etmek de
 "triage denemesi" olmaktan çıkardı — sahte çıktı demo değildir.
 
-Proje ücretsiz ve bağımlılıksız kaldı. Katman, projenin modüler yapısı gereği
-zaman kalırsa çekirdeğe dokunmadan eklenebilir.
+Proje ücretsiz ve bağımlılıksız kaldı. **Bu bir iptal değil bir ertelemedir:**
+katman, projenin modüler yapısı gereği çekirdeğe dokunmadan eklenebilir ve
+yukarıdaki tasarım kaydı tam da bunun için tutuldu — kuran kişi tasarım
+aşamasını baştan yapmayacak.
 
-## M8 / M9 kapsam kesintisi
+## M8 / M9 — ertelendi
 
-**AST-yapısal kurallar (M8) ve presence-check (M9) kapsam dışı bırakıldı.**
+**AST-yapısal kurallar (M8) ve presence-check (M9) ertelendi.**
+
+Bu bir iptal değil bir sıralama kararıdır: kalan sürede çalışan bir demo
+çıkarmak, yarım iki motor eklemekten önceliklidir. İkisi de mimaride yeri
+tanımlı işler ve zaman ayrıldığında yapılacaktır.
 
 ### Gerekçe: ikinci ve üçüncü bir kural şekli, yani ayrı bir motor
 
@@ -1439,8 +1445,10 @@ birkaç kategori" hedefiyle kuruldu (`roadmap.md` → "Neden bu sıra"). Dört
 taint kategorisi ve motorun genellenebilirlik kanıtı teslim edildi; iki
 yarım motor eklemek o hedefin tersi olurdu.
 
-Yazılı bir kesinti mühendislik muhakemesidir; sessiz bir eksik teslim
-edilememedir. Bu kayıt kesintiyi açık hâle getirir.
+Yazılı bir erteleme mühendislik muhakemesidir; sessiz bir eksik teslim
+edilememedir. Bu kayıt ertelemeyi ve gerekçesini açık hâle getirir — ve
+yapılacakları da: `architecture.md` üç motor tipini tanımlıyor, ikincisi ve
+üçüncüsü hâlâ planın parçası.
 
 ### Ne teslim edildi
 
@@ -1526,3 +1534,47 @@ tek şey gerçek koddu.
 Ölçmeden iddia etmeme disiplini iddiaları doğruladı; ama *hangi iddiaların
 kurulacağını* seçen şey yine aynı varsayımlardı. Gerçek kod bu döngüyü
 kıran tek girdi.
+
+
+### Gerçek dünyada bulunan zafiyet
+
+Sink düzeltmesinden sonra tarama genişletildi ve motor **başkasının
+deposunda gerçek bir SQL injection buldu** — `we45/Vulnerable-Flask-App`:
+
+```
+app/app.py:265  CRITICAL  sql-injection  CWE-89  [user-input]
+    request.json -> content -> search_term -> str_query -> db.engine.execute
+```
+
+Kaynak kod:
+
+```python
+content = request.json                                          # SOURCE
+search_term = content['search']                                 # 1. sicrama
+str_query = "SELECT ... WHERE username = '%s';" % search_term    # 2. sicrama
+search_query = db.engine.execute(str_query)                     # SINK
+```
+
+Dört sıçramalık bir veri akışı, tek fonksiyon içinde, `%` formatlamayla.
+Doğru pozitif olduğu kaynağa bakılarak doğrulandı.
+
+**Bu bulgu yalnızca sink düzeltmesiyle mümkün oldu:** sink `db.engine.execute`
+üzerinde; eski `cursor.execute` hedefiyle 0 bulgu verirdi. Yani gerçek kod
+taraması hem körlüğü buldu hem de düzeltmenin karşılığını aynı taramada
+gösterdi.
+
+### Taranan hedeflerin tam listesi
+
+| Hedef | Framework | Sonuç | Neden |
+|---|---|---|---|
+| `we45/Vulnerable-Flask-App` | Flask | **1 bulgu** | tek fonksiyon, `%` formatlama — kapsamda |
+| `fportantier/vulpy` | Flask | 0 | inter-procedural + literal receiver `.format()` |
+| `anxolerd/dvpwa` | aiohttp | 0 | Flask dışı source'lar + DAO katmanı (inter-procedural) |
+| Flask + Werkzeug + Jinja2 (45 137 satır) | — | 0 | üretim kodu, yanlış pozitif yok |
+
+`dvpwa`'nın 0 vermesi doğru davranıştır: kuralın source'ları tanım gereği
+Flask'a özgüdür (`request.args`, `request.form`, ...) ve aiohttp'nin request
+nesnesi kapsamda değildir.
+
+Toplam: **4 hedef, 182 dosya, ~48 000 satır**; 1 doğru pozitif, 0 yanlış
+pozitif, ve 3 ölçülmüş kaçırma — üçü de önceden ilan edilmiş sınırlardan.
