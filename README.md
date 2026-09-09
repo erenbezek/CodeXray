@@ -97,6 +97,28 @@ Bulgu yok / 4 dosya tarandı
 
 CI'da doğrudan kapı olarak kullanılabilir.
 
+### Gerçek dünyada doğrulama
+
+Motor yalnızca kendi örnekleri üzerinde değil, dışarıdaki depolarda da
+denendi. `we45/Vulnerable-Flask-App` içinde gerçek bir SQL injection buldu:
+
+```text
+app/app.py:265  CRITICAL  sql-injection  CWE-89  [user-input]
+    request.json -> content -> search_term -> str_query -> db.engine.execute
+```
+
+Dört sıçramalık veri akışı — `request.json`'dan `%` formatlamayla kurulan
+sorguya, oradan `db.engine.execute`'a.
+
+Taranan hedefler: 4 depo, 182 dosya, ~48 000 satır. **1 doğru pozitif,
+0 yanlış pozitif.** Flask + Werkzeug + Jinja2'nin 45 137 satırlık üretim
+kodunda hiç alarm üretmedi.
+
+Kaçırılan kalıplar ve sebepleri (üçü de önceden ilan edilmiş sınırlar:
+inter-procedural analiz, literal receiver eşleştirme, konteyner semantiği)
+`docs/design-decisions.md` → "Gerçek uygulama taraması" içinde ölçümleriyle
+kayıtlı.
+
 ### JSON çıktısı
 
 `--json` yapısal çıktı verir. Bulgu nesir içermez — motor olgu üretir,

@@ -24,8 +24,8 @@ farklı source kind ailelerini de kural bazında izole ediyor. Sırayla:
 | M7 | Sensitive Data Exposure | tamamlandı |
 | — | Gerçek uygulama taraması | tamamlandı |
 | M10 | Dependency check (pip-audit, dış araç) | taramadan sonra |
-| M8 / M9 | AST-yapısal + presence-check | **kapsam dışı** (karar kaydı) |
-| M11 | LLM triage katmanı | **kapsam dışı** (tasarlandı, kurulmadı) |
+| M8 / M9 | AST-yapısal + presence-check | **ertelendi** (karar kaydı) |
+| M11 | LLM triage katmanı | **ertelendi** (tasarlandı, kurulmadı) |
 | — | Literal receiver / shape-based matching | ertelendi |
 
 Sıranın gerekçesi ve kapının durma koşulu için `docs/roadmap.md` → "Dört
