@@ -20,6 +20,14 @@ import json
 import sys
 from pathlib import Path
 
+from .dependency_audit import (
+    DependencyAuditError,
+    DependencyVulnerability,
+    PipAuditUnavailable,
+    count_pip_audit_packages,
+    parse_pip_audit_json,
+    run_pip_audit,
+)
 from .rule_model import RuleEngine
 from .rules import ALL_RULES
 from .taint_engine import Finding, TaintAnalyzer
@@ -31,6 +39,9 @@ def _build_parser() -> argparse.ArgumentParser:
     scan = subparsers.add_parser("scan", help="scan Python source files")
     scan.add_argument("path", type=Path)
     scan.add_argument("--json", action="store_true", dest="as_json")
+    audit = subparsers.add_parser("audit", help="audit Python dependencies")
+    audit.add_argument("requirements", type=Path)
+    audit.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -127,6 +138,96 @@ def _scan(path: Path, as_json: bool) -> int:
     return 1 if findings else 0
 
 
+def _dependency_schema(
+    vulnerability: DependencyVulnerability,
+) -> dict[str, object]:
+    return {
+        "package": vulnerability.package,
+        "installed_version": vulnerability.installed_version,
+        "vuln_id": vulnerability.vuln_id,
+        "aliases": list(vulnerability.aliases),
+        "fix_versions": list(vulnerability.fix_versions),
+        "description": vulnerability.description,
+    }
+
+
+def _print_dependency_human(
+    vulnerabilities: tuple[DependencyVulnerability, ...],
+    packages_scanned: int,
+) -> None:
+    for vulnerability in vulnerabilities:
+        fixes = ", ".join(vulnerability.fix_versions) or "-"
+        print(
+            f"{vulnerability.package} {vulnerability.installed_version}  "
+            f"{vulnerability.vuln_id}  -> {fixes}"
+        )
+        if vulnerability.aliases:
+            print(f"    {', '.join(vulnerability.aliases)}")
+
+    if vulnerabilities:
+        print(f"{len(vulnerabilities)} zafiyet / {packages_scanned} paket")
+    else:
+        print(f"Zafiyet yok / {packages_scanned} paket")
+
+
+def _print_dependency_json(
+    vulnerabilities: tuple[DependencyVulnerability, ...],
+    packages_scanned: int,
+) -> None:
+    payload = {
+        "vulnerabilities": [
+            _dependency_schema(vulnerability) for vulnerability in vulnerabilities
+        ],
+        "summary": {
+            "packages_scanned": packages_scanned,
+            "vulnerabilities": len(vulnerabilities),
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _audit(
+    requirements: Path,
+    as_json: bool,
+    runner=None,
+) -> int:
+    if not requirements.is_file():
+        print(
+            f"codexray: requirements file does not exist: {requirements}",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        output = (runner or run_pip_audit)(requirements)
+    except (PipAuditUnavailable, FileNotFoundError, ModuleNotFoundError) as error:
+        if isinstance(error, (FileNotFoundError, ModuleNotFoundError)):
+            message = (
+                "pip-audit kurulu değil. Kurmak için: "
+                "python -m pip install pip-audit"
+            )
+        else:
+            message = str(error)
+        print(f"codexray audit: {message}", file=sys.stderr)
+        return 2
+    except DependencyAuditError as error:
+        print(f"codexray audit: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        vulnerabilities = parse_pip_audit_json(output)
+        packages_scanned = count_pip_audit_packages(output)
+    except ValueError as error:
+        print(f"codexray audit: {error}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        _print_dependency_json(vulnerabilities, packages_scanned)
+    else:
+        _print_dependency_human(vulnerabilities, packages_scanned)
+    return 1 if vulnerabilities else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     try:
@@ -136,4 +237,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "scan":
         return _scan(args.path, args.as_json)
+    if args.command == "audit":
+        return _audit(args.requirements, args.as_json)
     return 2

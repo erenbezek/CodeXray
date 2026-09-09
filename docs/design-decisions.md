@@ -1578,3 +1578,45 @@ nesnesi kapsamda değildir.
 
 Toplam: **4 hedef, 182 dosya, ~48 000 satır**; 1 doğru pozitif, 0 yanlış
 pozitif, ve 3 ölçülmüş kaçırma — üçü de önceden ilan edilmiş sınırlardan.
+
+## M10 — bağımlılık taraması
+
+M10 bir tespit kuralı değil, orkestrasyon katmanıdır: CodeXray dışarıdaki
+`pip-audit` aracını `sys.executable -m pip_audit -r <requirements> --no-deps
+-f json` ile çağırır ve sonucu kendi insan/JSON rapor biçimine taşır.
+
+### Neden `Finding` kullanılmadı
+
+Bağımlılık zafiyeti bir taint akışı değildir. `Finding` alanlarının ölçülen
+uyuşmazlığı şöyledir:
+
+| `Finding` alanı | Bağımlılık zafiyetindeki durum |
+|---|---|
+| `rule_id` | uydurma |
+| `cwe` | pip-audit PYSEC/GHSA/CVE verir, yok |
+| `severity` | yok |
+| `kind` | yok |
+| `path` | taint yolu yok |
+| `lineno` | yok |
+| `filename` | zorlama |
+
+Buna karşılık `fix_versions`, `aliases`, paket adı ve kurulu sürüm
+`Finding`'de taşınamaz. Bu yüzden `DependencyVulnerability` kardeş tip olarak
+tanımlandı; `taint_engine.py` ve `Finding` değiştirilmedi.
+
+### Ayrı alt komut ve dış araç sınırı
+
+`scan` kaynak kodunu, `audit` ise requirements girdisini analiz eder. İki
+akışı birleştirmek farklı girdileri ve farklı rapor sözleşmelerini karıştırır.
+`pip-audit` pyproject runtime bağımlılığına eklenmedi; CodeXray'in sıfır
+runtime-bağımlılığı korunur. Araç yoksa CLI kurulum komutunu stderr'e yazıp
+exit 2 döndürür. Zafiyet bulunduğunda pip-audit'in exit 1 sonucu normal kabul
+edilir; temiz sonuç exit 0'dır.
+
+### `--no-deps` ve ağsız test kararı
+
+Çıplak `-r requirements.txt` eski paketleri derlemeye çalışabildiği için
+ölçülen uygulama tuzağıdır; çağrıdaki `--no-deps` satırı bilinçli olarak
+korunur. Testler `pip-audit` çalıştırmaz ve ağ kullanmaz: gerçek çıktının
+şeması string fixture ile saf ayrıştırıcıya verilir, dış araç çağrısı sahte
+runner/subprocess ile doğrulanır.
