@@ -14,9 +14,18 @@ etmeyi hedefler.
 
 ## Durum
 
-M5 tamamlandı: paketleme/test altyapısı düzeltildi, birim test kapsamı genişletildi,
-sanitizer eşleşme semantiği pattern seviyesine indirgendi ve Python + Flask için
-reflected/server-side XSS kuralı eklendi (bkz. `docs/roadmap.md`).
+Dört taint kategorisi çalışıyor (SQL Injection, XSS, Path Manipulation,
+Sensitive Data Exposure), çalıştırılabilir bir CLI tarayıcı var ve motor
+gerçek kod üzerinde denendi.
+
+Yeni bir kategori eklemek çekirdek motora dokunmadan yapılıyor: son iki
+kural `taint_engine.py`'de sıfır satır değiştirerek eklendi.
+
+AST-yapısal kurallar (M8), presence-check (M9) ve LLM triage katmanı (M11)
+bilinçli olarak kapsam dışı bırakıldı — gerekçeleri
+`docs/design-decisions.md` içinde kayıtlı.
+
+Milestone planı için `docs/roadmap.md`.
 
 ## Şu an ne çalışıyor
 
@@ -51,20 +60,68 @@ pip install pytest
 Kurulumdan sonra bir dosyayı veya dizini tarayabilirsiniz:
 
 ```bash
-codexray scan examples/vulnerable/sql_injection.py
-python -m codexray scan examples/vulnerable/sql_injection.py
+codexray scan examples/vulnerable
+python -m codexray scan examples/vulnerable
 ```
 
-Örnek çıktı:
+Her bulgu için iki satır: konum + severity + kural + CWE + kaynak ailesi,
+ve altında **tam veri akışı izi**. Bu iz, aracı bir desen eşleştiriciden
+ayıran şey.
 
 ```text
-examples/vulnerable/sql_injection.py:4  CRITICAL  sql-injection  CWE-89
+examples/vulnerable/path_manipulation.py:5  HIGH  path-manipulation  CWE-22  [user-input]
+    request.args -> path -> open
+examples/vulnerable/sensitive_data.py:5  MEDIUM  sensitive-data-exposure  CWE-200  [sensitive]
+    os.environ -> secret -> print
+examples/vulnerable/sql_injection.py:4  CRITICAL  sql-injection  CWE-89  [user-input]
     request.args -> username -> query -> cursor.execute
-    request.args kaynakli kullanici girdisi, sanitize edilmeden cursor.execute sink'ine ulasiyor
-1 bulgu / 1 dosya tarandı
+examples/vulnerable/xss.py:4  HIGH  xss  CWE-79  [user-input]
+    request.args -> value -> body -> Response
+4 bulgu / 4 dosya tarandı
 ```
 
-Makine tarafından işlenecek çıktı için `--json` seçeneğini kullanın.
+Güvenli örnekler bulgu üretmiyor:
+
+```bash
+$ codexray scan examples/safe
+Bulgu yok / 4 dosya tarandı
+```
+
+### Exit kodları
+
+| Kod | Anlamı |
+|---|---|
+| 0 | Bulgu yok |
+| 1 | En az bir bulgu |
+| 2 | Kullanım hatası ya da yol bulunamadı |
+
+CI'da doğrudan kapı olarak kullanılabilir.
+
+### JSON çıktısı
+
+`--json` yapısal çıktı verir. Bulgu nesir içermez — motor olgu üretir,
+cümle kurmak sunum katmanının işidir:
+
+```bash
+codexray scan examples/vulnerable/sql_injection.py --json
+```
+
+```json
+{
+  "findings": [
+    {
+      "file": "examples/vulnerable/sql_injection.py",
+      "line": 4,
+      "rule_id": "sql-injection",
+      "cwe": "CWE-89",
+      "severity": "CRITICAL",
+      "kind": "user-input",
+      "taint_path": ["request.args", "username", "query", "cursor.execute"]
+    }
+  ],
+  "summary": {"files_scanned": 1, "findings": 1, "skipped_files": 0}
+}
+```
 
 ## Test
 
