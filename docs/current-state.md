@@ -23,7 +23,7 @@ farklı source kind ailelerini de kural bazında izole ediyor. Sırayla:
 | M6 | Path Manipulation | tamamlandı |
 | M7 | Sensitive Data Exposure | tamamlandı |
 | — | Gerçek uygulama taraması | tamamlandı |
-| M10 | Dependency check (pip-audit, dış araç) | taramadan sonra |
+| M10 | Dependency check (pip-audit, dış araç) | tamamlandı |
 | M8 / M9 | AST-yapısal + presence-check | **ertelendi** (karar kaydı) |
 | M11 | LLM triage katmanı | **ertelendi** (tasarlandı, kurulmadı) |
 | — | Literal receiver / shape-based matching | ertelendi |
@@ -86,6 +86,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 - `Await` expression propagation
 - `RestSelector` ile variadic CallModel argüman propagation (`os.path.join`, `format`)
 - Çalıştırılabilir CLI tarayıcısı (`codexray scan` ve `python -m codexray`)
+- Bağımlılık denetimi (`codexray audit`, dış `pip-audit` orkestrasyonu)
 - Paylaşılan Flask request source tanımı (`rules/sources.py`)
 - Dosya konumlu `Finding` ve insan / JSON raporlama
 - Receiver analizi (`Response(v).upper()` içindeki sink görünür)
@@ -97,7 +98,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-266 passed
+309 passed
 
 ## Current SQL Injection Flow
 
@@ -190,6 +191,11 @@ Currently implemented:
 
 Contains the separate `sensitive` source family and CWE-200 sinks.
 
+### `src/codexray/dependency_audit.py`
+
+Contains the dependency-audit data model, pure pip-audit JSON parser, and
+isolated external-tool runner.
+
 ### `src/codexray/rules/sources.py`
 
 Contains source patterns shared by multiple vulnerability rules, currently the
@@ -214,7 +220,6 @@ Contains vulnerable and safe example Python code.
 ## Not Implemented Yet
 - AST structural rules
 - Presence-check rules
-- Dependency scanning
 - Inter-procedural analysis
 - Control-flow analysis
 - Type inference

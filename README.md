@@ -97,6 +97,29 @@ Bulgu yok / 4 dosya tarandı
 
 CI'da doğrudan kapı olarak kullanılabilir.
 
+### Bağımlılık denetimi
+
+Bağımlılık taraması ayrı bir alt komuttur ve `Finding`/taint çıktısından
+bağımsızdır:
+
+```bash
+python -m pip install pip-audit
+codexray audit requirements.txt
+codexray audit requirements.txt --json
+```
+
+`pip-audit` runtime bağımlılığı değildir; CLI onu `sys.executable -m
+pip_audit` ile dış araç olarak çağırır ve `--no-deps` kullanır. Bu yerel
+çalışma ortamında `pip-audit` kurulu olmadığından doğrulanan gerçek hata
+çıktısı şöyledir:
+
+```text
+codexray audit: pip-audit kurulu değil. Kurmak için: python -m pip install pip-audit
+```
+
+Araç kurulduğunda çıktı, paket adı/sürümü, vulnerability ID'si, alias'ları ve
+fix sürümlerini insan veya JSON biçiminde raporlar.
+
 ### Gerçek dünyada doğrulama
 
 Motor yalnızca kendi örnekleri üzerinde değil, dışarıdaki depolarda da

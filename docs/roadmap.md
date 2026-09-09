@@ -37,7 +37,8 @@ M7  Sensitive Data Exposure               <-- TAMAMLANDI
 GERCEK UYGULAMA TARAMASI              <-- next
      |   (motor hic gercek kodda calistirilmadi -- en yuksek demo degeri)
      |
-M10 Bonus: dependency check               (pip-audit, DIS ARAC)
+M10 Bonus: dependency check               <-- TAMAMLANDI
+     |   (pip-audit, DIS ARAC)
      |
 KOD DONDU
      |   README + erteleme kararlari + demo ciktilari
