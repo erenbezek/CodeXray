@@ -18,12 +18,21 @@ Dört taint kategorisi çalışıyor (SQL Injection, XSS, Path Manipulation,
 Sensitive Data Exposure), çalıştırılabilir bir CLI tarayıcı var ve motor
 gerçek kod üzerinde denendi.
 
-Yeni bir kategori eklemek çekirdek motora dokunmadan yapılıyor: son iki
-kural `taint_engine.py`'de sıfır satır değiştirerek eklendi.
+Mimarinin maliyeti ölçüldü ve sınırı nettir. **Mevcut bir kaynak ailesi
+içinde** yeni kategori eklemek çekirdeğe hiç dokunmuyor: Path Manipulation
+`taint_engine.py`'de **sıfır satır** değiştirdi; genişleme yalnızca kurala
+özgü olmayan veri-akışı katmanında (`call_model.py`, 7 satır) oldu.
+
+**Yeni bir kaynak ailesi** eklemek ise bedelli: Sensitive Data Exposure
+`taint_engine.py`'de **25 satıra** mal oldu, çünkü kuralların birbirinin
+sink'ini tetiklediği ortaya çıktı ve motora kural izolasyonu eklemek
+gerekti. Neyi zorladığı adım adım kayıtlı.
+
+Yani mimari kategori eklemeye açık, kaynak ailesi eklemeye kısmen açık —
+ölçülmüş bir sınır, slogan değil.
 
 AST-yapısal kurallar (M8), presence-check (M9) ve LLM triage katmanı (M11)
-bilinçli olarak kapsam dışı bırakıldı — gerekçeleri
-`docs/design-decisions.md` içinde kayıtlı.
+**ertelendi** — gerekçeleri `docs/design-decisions.md` içinde kayıtlı.
 
 Milestone planı için `docs/roadmap.md`.
 
@@ -123,10 +132,15 @@ flask 0.12.2  PYSEC-2018-66  -> 0.12.3
 Her satır: paket, kurulu sürüm, zafiyet kimliği ve düzeltildiği sürüm;
 altında CVE / GHSA alias'ları.
 
+Rapor edilen paket sayısı dosyadaki satır sayısından fazla olabilir:
+`pip-audit` bağımlılıkları da çözer, yani iki sabitlenmiş paket altı pakete
+açılır. Zafiyet sayısı da zafiyet veritabanı büyüdükçe artar.
+
 `pip-audit` **runtime bağımlılığı değildir** — CLI onu `sys.executable -m
-pip_audit` ile dış araç olarak çağırır ve `--no-deps` kullanır (çıplak
-`-r` eski paketleri derlemeye çalışıp patlıyor). Kurulu değilse araç
-çökmez, ne yapılacağını söyler ve `2` ile çıkar:
+pip_audit` ile dış araç olarak çağırır. `--no-deps` bayrağı çözümlemeyi
+dosyada sabitlenene yakın tutmak için veriliyor; `pip-audit 2.10.1` ile
+bayraksız çalışma da ölçüldü ve aynı sonucu veriyor. Araç kurulu değilse
+CLI çökmez, ne yapılacağını söyler ve `2` ile çıkar:
 
 ```text
 codexray audit: pip-audit kurulu değil. Kurmak için: python -m pip install pip-audit
