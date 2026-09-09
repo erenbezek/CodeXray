@@ -1620,3 +1620,69 @@ edilir; temiz sonuç exit 0'dır.
 korunur. Testler `pip-audit` çalıştırmaz ve ağ kullanmaz: gerçek çıktının
 şeması string fixture ile saf ayrıştırıcıya verilir, dış araç çağrısı sahte
 runner/subprocess ile doğrulanır.
+
+
+## Bağımsız incelemede bulunan konsol encoding çökmesi
+
+Teslim öncesi bağımsız bir doğrulama, ölçülen her iddiayı tekrar üretti ve
+iki hata buldu. Biri gerçek bir çökme.
+
+### Ölçüm
+
+`codexray scan` raporunda `tarandı` geçiyor ve `ı` (U+0131) cp1252 ile
+cp437'de kodlanamıyor. Ölçüldü:
+
+    cp1254 (Turkce Windows)      exit 0   calisiyor
+    utf-8                        exit 0   calisiyor
+    cp1252 (ABD/Bati Avrupa)     exit 1   UnicodeEncodeError, stdout BOS
+    cp437  (ABD OEM konsol)      exit 1   ayni
+
+Geliştirme makinesi Türkçe kod sayfası kullandığı için hiç görünmedi —
+`cursor` körlüğüyle aynı şekil: aracı sınayan ortam, aracın varsayımını
+paylaşıyordu.
+
+### Neden ciddi
+
+İki katmanlı: temiz kodda **exit 1** dönüyordu, yani CI kapısı bulgu yokken
+kırmızı yanıyor ve bunu gerçek bulgudan ayırt etmenin yolu yok. Ve en çok
+yönlendirilmiş çıktıda ısırıyor — tam olarak CI'ın okuduğu yerde.
+
+### Düzeltme
+
+CLI girişinde `sys.stdout` ve `sys.stderr`, `encoding="utf-8"` ve
+`errors="replace"` ile yeniden yapılandırılıyor. UTF-8, yönlendirilmiş bir
+dosyada doğru olan; `errors="replace"` ise taban — bozulmuş çıktı,
+traceback'ten iyidir. `reconfigure` taşımayan ya da reddeden bir akış
+(kapatılmış, ya da bir test double'ı) sessizce atlanıyor.
+
+Beş kod sayfasında doğrulandı (`cp1254`, `cp1252`, `cp437`, `utf-8`,
+`ascii`): hepsi exit 0 temiz kodda, exit 1 bulguda. İki regresyon testi
+davranışı kilitliyor; düzeltmeyi geri alan mutasyon ikisini de kırıyor.
+
+## "Sıfır satır" iddiası ölçülmüş hâline çekildi
+
+README "son iki kural `taint_engine.py`'de sıfır satır değiştirerek eklendi"
+diyordu. PR sınırlarında ölçüldü ve yanlış:
+
+    M6 Path Manipulation      taint_engine.py   0 satir   call_model.py   7 satir
+    M7 Sensitive Data         taint_engine.py  25 satir
+
+M7 motoru gerçekten değiştirdi — kural izolasyonu, `TaintState.kinds` ve
+nesirin kaldırılması. Teslim notu bu işleri zaten ayrı ayrı anlatıyordu,
+yani iddia belgenin kendi içeriğiyle çelişiyordu.
+
+Ölçülmüş hâli daha güçlü ve savunulabilir:
+
+- **Mevcut bir kaynak ailesi içinde** kategori eklemek çekirdeğe hiç
+  dokunmuyor (M6: 0 satır).
+- **Yeni bir kaynak ailesi** eklemek bedelli (M7: 25 satır) — ve tam olarak
+  neyi zorladığı adım adım kayıtlı.
+
+Birincisi ölçülmüş bir mimari sınır; diğeri ölçülmemiş bir slogandı.
+
+## `--no-deps` gerekçesi eskidi
+
+Kayıt "çıplak `-r` eski paketleri derlemeye çalışıp patlıyor" diyordu.
+`pip-audit 2.10.1` ile ikisi de çalıştırıldı: ikisi de exit 1, ikisi de
+6 paket / 10 zafiyet. Bayrak çözümlemeyi dosyada sabitlenene yakın tuttuğu
+için korunuyor, ama gerekçe artık gösterilemiyor ve öyle yazıldı.

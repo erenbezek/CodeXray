@@ -253,3 +253,46 @@ def test_human_output_tags_the_kind_and_prints_no_prose_line(capsys, tmp_path):
     assert "kullanici girdisi" not in out
     # Two lines per finding: header and taint path.
     assert len([line for line in out.splitlines() if line.strip()]) == 3
+
+
+def test_scan_survives_a_console_that_cannot_encode_the_report(monkeypatch, tmp_path):
+    """A cp1252 or cp437 stream must not take the scan down.
+
+    The report says `tarandı`, which carries U+0131. On a Turkish console it
+    encodes; on a US Windows console or a redirected pipe it did not, and the
+    run died with UnicodeEncodeError -- exit 1 on clean code, empty stdout, a
+    CI gate red with no findings and no way to tell that from a real one.
+    """
+    import io as _io
+    import sys as _sys
+
+    (tmp_path / "clean.py").write_text("x = 1\n", encoding="utf-8")
+    buffer = _io.BytesIO()
+    monkeypatch.setattr(
+        _sys, "stdout", _io.TextIOWrapper(buffer, encoding="cp1252")
+    )
+
+    exit_code = main(["scan", str(tmp_path)])
+    _sys.stdout.flush()
+
+    assert exit_code == 0
+    assert b"dosya" in buffer.getvalue()
+
+
+def test_findings_report_survives_the_same_console(monkeypatch, tmp_path):
+    import io as _io
+    import sys as _sys
+
+    (tmp_path / "bad.py").write_text(
+        "value = request.args['q']\nResponse(value)\n", encoding="utf-8"
+    )
+    buffer = _io.BytesIO()
+    monkeypatch.setattr(
+        _sys, "stdout", _io.TextIOWrapper(buffer, encoding="cp437")
+    )
+
+    exit_code = main(["scan", str(tmp_path)])
+    _sys.stdout.flush()
+
+    assert exit_code == 1
+    assert b"xss" in buffer.getvalue()

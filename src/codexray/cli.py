@@ -228,7 +228,33 @@ def _audit(
     return 1 if vulnerabilities else 0
 
 
+def _force_utf8_output() -> None:
+    """Keep a scan from dying on the console's codepage.
+
+    The report text is Turkish, and `tarandı` carries U+0131.  A console or a
+    redirected pipe running cp1252 or cp437 cannot encode it, so `print`
+    raised UnicodeEncodeError and the process exited 1 -- on clean code, with
+    an empty stdout.  A CI gate then went red with no findings and no way to
+    tell that apart from a real one.  Measured: cp1254 and utf-8 exit 0,
+    cp1252 and cp437 crashed.
+
+    UTF-8 is correct in a redirected file, which is where CI reads it.
+    `errors="replace"` is the floor: degraded output beats a traceback.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            # A stream that refuses reconfiguration (already detached, or a
+            # test double) is left alone rather than taking the run down.
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_output()
     parser = _build_parser()
     try:
         args = parser.parse_args(argv)

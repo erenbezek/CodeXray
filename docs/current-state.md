@@ -98,7 +98,7 @@ ve ölçümler için `docs/design-decisions.md` → "M5.10 karar".
 
 ## Test Status
 
-309 passed
+311 passed
 
 ## Current SQL Injection Flow
 
