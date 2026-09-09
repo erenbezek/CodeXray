@@ -104,21 +104,33 @@ bağımsızdır:
 
 ```bash
 python -m pip install pip-audit
-codexray audit requirements.txt
-codexray audit requirements.txt --json
+codexray audit examples/requirements.txt
+codexray audit examples/requirements.txt --json
 ```
 
-`pip-audit` runtime bağımlılığı değildir; CLI onu `sys.executable -m
-pip_audit` ile dış araç olarak çağırır ve `--no-deps` kullanır. Bu yerel
-çalışma ortamında `pip-audit` kurulu olmadığından doğrulanan gerçek hata
-çıktısı şöyledir:
+`examples/requirements.txt` bilerek eski sürümler sabitler — kod tarayıcı
+için `examples/vulnerable/` ne ise, bağımlılık tarayıcı için o:
+
+```text
+flask 0.12.2  PYSEC-2019-179  -> 1.0
+    CVE-2019-1010083, GHSA-5wv5-4vpf-pj6m
+flask 0.12.2  PYSEC-2018-66  -> 0.12.3
+    CVE-2018-1000656, GHSA-562c-5r94-xh97
+...
+10 zafiyet / 6 paket
+```
+
+Her satır: paket, kurulu sürüm, zafiyet kimliği ve düzeltildiği sürüm;
+altında CVE / GHSA alias'ları.
+
+`pip-audit` **runtime bağımlılığı değildir** — CLI onu `sys.executable -m
+pip_audit` ile dış araç olarak çağırır ve `--no-deps` kullanır (çıplak
+`-r` eski paketleri derlemeye çalışıp patlıyor). Kurulu değilse araç
+çökmez, ne yapılacağını söyler ve `2` ile çıkar:
 
 ```text
 codexray audit: pip-audit kurulu değil. Kurmak için: python -m pip install pip-audit
 ```
-
-Araç kurulduğunda çıktı, paket adı/sürümü, vulnerability ID'si, alias'ları ve
-fix sürümlerini insan veya JSON biçiminde raporlar.
 
 ### Gerçek dünyada doğrulama
 

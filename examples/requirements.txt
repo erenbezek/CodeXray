@@ -1,0 +1,6 @@
+# Bagimlilik taramasi demosu icin bilerek eski surumler.
+#   codexray audit examples/requirements.txt
+# examples/vulnerable/ kod tarayici icin ne ise, bu dosya da bagimlilik
+# tarayici icin odur: bilinen zafiyetleri olan gercek surumler.
+flask==0.12.2
+jinja2==2.10
